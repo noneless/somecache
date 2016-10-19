@@ -12,6 +12,13 @@ type TcpServer interface {
 	TcpServer(net.Listener)
 }
 
-const (
-	MagicV1 = []byte("  V1")
+var (
+	MagicV1     = []byte("  V1")
+	COMMAND_PUT = []byte("PUT")
+	COMMAND_GET = []byte("GET")
+	E_ERROR     = []byte("E_ERROR")
+	WhiteSpace  = []byte(' ')
 )
+
+type Command struct {
+}
