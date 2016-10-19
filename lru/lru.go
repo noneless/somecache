@@ -2,7 +2,6 @@ package lru
 
 import (
 	"container/list"
-	"fmt"
 	"sync"
 )
 
@@ -11,6 +10,10 @@ type Lru struct {
 	maincache    CaChe
 	cachedsize   uint64
 	maxcachesize uint64
+}
+
+func (l *Lru) GroupName() string {
+	return l.groupname
 }
 
 type Measureable interface {
@@ -26,14 +29,12 @@ func (l *Lru) Get(k string) interface{} {
 	if e == nil {
 		return nil
 	}
-	l.maincache.MoveToFront(e)
 	return e.Value
 }
 
 // will overwrite
 func (l *Lru) Put(k string, v Measureable) (*list.Element, error) {
 	length := v.Measure()
-	fmt.Println(length, l.cachedsize, l.maxcachesize)
 	if (length + l.cachedsize) > l.maxcachesize { //force to make room for new cache
 		l.cachedsize -= l.maincache.mkroom(length + l.cachedsize - l.maxcachesize)
 	}
@@ -53,7 +54,7 @@ func (c *CaChe) mkroom(size uint64) uint64 {
 	released := uint64(0)
 	c.lock.Lock()
 	for size > 0 {
-		t := c.lis.Back()
+		t := c.lis.Back() //clear
 		length = uint64(t.Value.(Measureable).Measure())
 		c.lis.Remove(t)
 		size -= length
@@ -64,21 +65,21 @@ func (c *CaChe) mkroom(size uint64) uint64 {
 }
 
 func (c *CaChe) Get(k string) *list.Element {
-	c.lock.RLock()
 	if c.eles == nil {
 		c.eles = make(map[string]*list.Element)
 	}
+	c.lock.RLock()
 	e, ok := c.eles[k]
 	c.lock.RUnlock()
 	if ok {
-		c.lis.MoveToFront(e)
+		c.MoveToFront(e)
 		return e
 	}
 	c.lock.Lock()
 	e, ok = c.eles[k]
 	c.lock.Unlock()
 	if ok {
-		c.lis.MoveToFront(e)
+		c.MoveToFront(e)
 		return e
 	}
 	return nil
@@ -91,11 +92,14 @@ func (c *CaChe) MoveToFront(e *list.Element) {
 }
 
 func (c *CaChe) Put(k string, v interface{}) *list.Element {
-	c.lock.Lock()
-	e := c.lis.PushBack(v)
 	if c.eles == nil {
 		c.eles = make(map[string]*list.Element)
 	}
+	c.lock.Lock()
+	if e, ok := c.eles[k]; ok {
+		c.lis.Remove(e)
+	}
+	e := c.lis.PushBack(v)
 	c.eles[k] = e
 	c.lock.Unlock()
 	return e
