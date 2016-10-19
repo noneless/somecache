@@ -2,11 +2,14 @@ package main
 
 import (
 	"flag"
+	"net"
+	"sync"
 )
 
 var (
 	master = flag.String("master", "", "master addr")
 	tcp    = flag.String("tcp-address", "", "tcp address")
+	wg     = sync.WaitGroup
 )
 
 func main() {
@@ -17,8 +20,30 @@ func main() {
 	if *tcp == "" {
 		panic("tcp is nil string")
 	}
+	ln, err := net.Listen("tcp", *tcp)
+	if err != nil {
+		panic(err)
+	}
+	var 
+	go handletcp()
+	go handlemaster()
+	wg.Wait()
 }
 
-type Getter interface {
-	Get(string) []byte
+func handletcp(ln *net.Listener) {
+	wg.Add(1)
+	defer wg.Done()
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			return err
+		}
+		
+		go handleConn(conn)
+
+	}
+}
+
+func handlemaster() {
+
 }
