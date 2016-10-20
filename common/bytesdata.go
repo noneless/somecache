@@ -1,7 +1,7 @@
 package common
 
-type BytesDate []byte
+type BytesData []byte
 
-func (bd BytesDate) Measure() uint64 {
+func (bd BytesData) Measure() uint64 {
 	return uint64(len(bd))
 }

@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	master = flag.String("master", "", "master addr")
+	master = flag.String("master-tcp-address", "", "master addr")
 	tcp    = flag.String("tcp-address", "", "tcp address")
 	wg     = sync.WaitGroup{}
 )
@@ -25,6 +25,6 @@ func main() {
 		panic(err)
 	}
 	go HandleTcp(ln)
-	go handlemaster()
+	go Connection2Master(*master)
 	wg.Wait()
 }

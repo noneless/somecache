@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/756445638/somecache/common"
 )
@@ -39,9 +40,26 @@ func HandleTcp(ln net.Listener) error {
 			continue
 		}
 		if bytes.Equal(b, common.MagicV1) { //the client should first send protocol version first
-			go (&V1Handle{}).IOLoop(conn) //driver by read
+			v1h := &V1Handle{}
+			go v1h.IOLoop(conn) //driver by read
+			go v1h.Ping()
 		} else {
 			fmt.Println("un support version", string(b))
+		}
+	}
+}
+
+//
+func (v1h *V1Handle) Ping() {
+	timer := time.NewTicker(time.Second)
+	for {
+		select {
+		case <-timer.C:
+			_, err := v1h.Write(common.COMMAND_PING, nil, nil)
+			if err != nil {
+				fmt.Println("write command ping failed,err:", err)
+			}
+			v1h.conn.Close()
 		}
 	}
 }
@@ -59,7 +77,6 @@ func (v1h *V1Handle) IOLoop(conn net.Conn) {
 			b = b[:len(b)-1]
 		}
 		if err := v1h.Exec(b); err != nil {
-
 		} else {
 
 		}
@@ -67,7 +84,7 @@ func (v1h *V1Handle) IOLoop(conn net.Conn) {
 }
 
 func (v1h *V1Handle) Exec(line []byte) error {
-	c, para := v1h.parseCommand(line)
+	c, para := common.ParseCommand(line)
 	var e error
 	if bytes.Equal(c, common.COMMAND_GET) {
 		e = v1h.GET(para)
@@ -124,18 +141,9 @@ func (v1h *V1Handle) PUT(para [][]byte) error {
 		v1h.WriteError([]byte(err.Error()))
 		return nil
 	}
-	group.Put(key, common.BytesDate(body))
+	group.Put(key, common.BytesData(body))
 	v1h.Write(common.OK, nil, nil)
 	return nil
-}
-
-func (v1h *V1Handle) parseCommand(line []byte) ([]byte, [][]byte) {
-	t := bytes.Split(line, common.WhiteSpace)
-	para := [][]byte{}
-	for i := 1; i < len(t)-1; i++ {
-		para = append(para, t[i])
-	}
-	return t[0], para
 }
 
 //thread safe wirte method,
@@ -143,10 +151,6 @@ func (v1h *V1Handle) Write(command []byte, parameter [][]byte, content []byte) (
 	v1h.Lock()
 	defer v1h.Unlock()
 	return common.NewCommand(command, parameter, content).Write(v1h.conn)
-}
-
-func handlemaster() {
-
 }
 
 func newTcpHandle() TcpHandle {

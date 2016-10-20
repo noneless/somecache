@@ -45,3 +45,7 @@ func (c *Command) Write(w io.Writer) (int, error) {
 	}
 	return total, nil
 }
+
+func NewCommand(command []byte, paras [][]byte, content []byte) *Command {
+	return &Command{command, paras, content}
+}

@@ -1,6 +1,7 @@
 package common
 
 import (
+	"bytes"
 	"net"
 )
 
@@ -13,16 +14,22 @@ type TcpServer interface {
 }
 
 var (
-	MagicV1     = []byte("  V1")
-	COMMAND_PUT = []byte("PUT")
-	COMMAND_GET = []byte("GET")
-	E_ERROR     = []byte("E_ERROR")
-	E_NOT_FOUND = []byte("NOT_FOUND")
-	ENDL        = []byte("\n")
-	OK          = []byte("OK")
-	WhiteSpace  = []byte(" ")
+	MagicV1      = []byte("  V1")
+	COMMAND_PUT  = []byte("PUT")
+	COMMAND_GET  = []byte("GET")
+	COMMAND_PING = []byte("PING")
+	E_ERROR      = []byte("E_ERROR")
+	E_NOT_FOUND  = []byte("NOT_FOUND")
+	ENDL         = []byte("\n")
+	OK           = []byte("OK")
+	WhiteSpace   = []byte(" ")
 )
 
-func NewCommand(command []byte, paras [][]byte, content []byte) *Command {
-	return &Command{command, paras, content}
+func ParseCommand(line []byte) ([]byte, [][]byte) {
+	t := bytes.Split(line, WhiteSpace)
+	para := [][]byte{}
+	for i := 1; i < len(t)-1; i++ {
+		para = append(para, t[i])
+	}
+	return t[0], para
 }
