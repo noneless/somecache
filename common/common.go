@@ -2,6 +2,8 @@ package common
 
 import (
 	"net"
+
+	//	"github.com/756445638/somecache/lru"
 )
 
 type Getter interface {
@@ -17,6 +19,8 @@ var (
 	COMMAND_PUT = []byte("PUT")
 	COMMAND_GET = []byte("GET")
 	E_ERROR     = []byte("E_ERROR")
+	E_NOT_FOUND = []byte("NOT_FOUND")
+	OK          = []byte("OK")
 	WhiteSpace  = []byte(" ")
 )
 

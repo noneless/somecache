@@ -39,7 +39,7 @@ func HandleTcp(ln net.Listener) error {
 		if err != nil && n != 4 {
 			continue
 		}
-		if bytes.Equal(b, common.MagicV1) { //the client should first send v1
+		if bytes.Equal(b, common.MagicV1) { //the client should first send communication first
 			go (&V1Handle{}).IOLoop(conn) //driver by read
 		} else {
 			fmt.Println("un support version", string(b))
@@ -49,6 +49,8 @@ func HandleTcp(ln net.Listener) error {
 
 func (v1h *V1Handle) IOLoop(conn net.Conn) {
 	reader := bufio.NewReader(v1h.conn)
+	v1h.conn = conn
+	defer conn.Close() //close
 	for {
 		b, err := reader.ReadBytes('\n')
 		if err != nil {
@@ -84,10 +86,33 @@ func (v1h *V1Handle) WriteError(reason []byte) (int64, error) {
 	return 0, nil
 }
 func (v1h *V1Handle) GET(para [][]byte) error {
-
 	return nil
 }
+
+/*
+	para:groupname key
+*/
 func (v1h *V1Handle) PUT(para [][]byte) error {
+	if len(para) != 2 {
+		v1h.WriteError([]byte("must be 2 parameters"))
+		return nil
+	}
+	groupname := string(para[1])
+	key := string(para[1])
+	group := groups.getGroup(groupname)
+	length_bytes := make([]byte, 4)
+	_, err := io.ReadFull(v1h.conn, length_bytes)
+	if err != nil {
+		v1h.WriteError([]byte(err.Error()))
+		return nil
+	}
+	length := binary.BigEndian.Uint32(length_bytes)
+	body := make([]byte, length)
+	bs, err := io.ReadFull(v1h.conn, body)
+	if err != nil {
+		v1h.WriteError([]byte(err.Error()))
+		return nil
+	}
 	return nil
 }
 
@@ -100,6 +125,7 @@ func (v1h *V1Handle) parseCommand(line []byte) ([]byte, [][]byte) {
 	return t[0], para
 }
 
+//thread safe wirte method
 func (v1h *V1Handle) Write(command []byte, parameter [][]byte, content []byte) (int, error) {
 	v1h.Lock()
 	defer v1h.Unlock()
