@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "io.grpc.examples.helloworld";
+option java_outer_classname = "HelloWorldProto";
+
+package connector;
+
+// The greeting service definition.
+service Master {
+  // Sends a greeting
+  rpc HeartBeat (HeartBeatReq) returns (HeartBeatRet) {}
+  rpc HandShank (HandShankReq) returns (HeartBeatRet) {}
+}
+
+message HandShankReq{
+	string json = 1;
+}
+
+message HandShankRet{
+	string json = 1;
+}
+
+
+// The request message containing the user's name.
+message HeartBeatReq {
+  string json = 1;
+}
+
+// The response message containing the greetings
+message HeartBeatRet {
+  string json = 1;
+}

@@ -4,45 +4,23 @@ import (
 	"flag"
 	"net"
 	"sync"
+
+	"github.com/756445638/somecache/master/grpc"
 )
 
 var (
-	master = flag.String("master", "", "master addr")
-	tcp    = flag.String("tcp-address", "", "tcp address")
-	wg     = sync.WaitGroup{}
+	wg   = sync.WaitGroup{}
+	port = ":50051"
 )
 
 func main() {
-	flag.Parse()
-	if *master == "" {
-		panic("master is nil string")
-	}
-	if *tcp == "" {
-		panic("tcp is nil string")
-	}
-	ln, err := net.Listen("tcp", *tcp)
+	lis, err := net.Listen("tcp", port)
 	if err != nil {
-		panic(err)
+		log.Fatalf("failed to listen: %v", err)
 	}
-	go HandleTcp(ln)
-	go handlemaster()
-	wg.Wait()
-}
-
-//func handletcp(ln *net.Listener) {
-//	wg.Add(1)
-//	defer wg.Done()
-//	for {
-//		conn, err := ln.Accept()
-//		if err != nil {
-//			return err
-//		}
-
-//		go handleConn(conn)
-
-//	}
-//}
-
-func handlemaster() {
-
+	s := grpc.NewServer()
+	pb.RegisterGreeterServer(s, &server{})
+	if err := s.Serve(lis); err != nil {
+		log.Fatalf("failed to serve: %v", err)
+	}
 }

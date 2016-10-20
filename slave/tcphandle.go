@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"sync"
 
@@ -39,7 +38,7 @@ func HandleTcp(ln net.Listener) error {
 		if err != nil && n != 4 {
 			continue
 		}
-		if bytes.Equal(b, common.MagicV1) { //the client should first send communication first
+		if bytes.Equal(b, common.MagicV1) { //the client should first send protocol version first
 			go (&V1Handle{}).IOLoop(conn) //driver by read
 		} else {
 			fmt.Println("un support version", string(b))
@@ -86,6 +85,18 @@ func (v1h *V1Handle) WriteError(reason []byte) (int64, error) {
 	return 0, nil
 }
 func (v1h *V1Handle) GET(para [][]byte) error {
+	if len(para) != 2 {
+		v1h.WriteError([]byte("must be 2 parameters"))
+		return nil
+	}
+	groupname := string(para[1])
+	key := string(para[1])
+	group := groups.getGroup(groupname)
+	v := group.Get(key)
+	if v == nil {
+		v1h.WriteError(common.E_NOT_FOUND)
+		return nil
+	}
 	return nil
 }
 
@@ -108,11 +119,13 @@ func (v1h *V1Handle) PUT(para [][]byte) error {
 	}
 	length := binary.BigEndian.Uint32(length_bytes)
 	body := make([]byte, length)
-	bs, err := io.ReadFull(v1h.conn, body)
+	_, err = io.ReadFull(v1h.conn, body)
 	if err != nil {
 		v1h.WriteError([]byte(err.Error()))
 		return nil
 	}
+	group.Put(key, common.BytesDate(body))
+	v1h.Write(common.OK, nil, nil)
 	return nil
 }
 
@@ -125,32 +138,11 @@ func (v1h *V1Handle) parseCommand(line []byte) ([]byte, [][]byte) {
 	return t[0], para
 }
 
-//thread safe wirte method
+//thread safe wirte method,
 func (v1h *V1Handle) Write(command []byte, parameter [][]byte, content []byte) (int, error) {
 	v1h.Lock()
 	defer v1h.Unlock()
-	total := int(0)
-	n, err := v1h.conn.Write(command)
-	total += n
-	if err != nil {
-		return total, err
-	}
-	n, err = v1h.conn.Write(bytes.Join(parameter, common.WhiteSpace))
-	total += n
-	if err != nil {
-		return total, err
-	}
-	length := len(content)
-	for length > 0 {
-		n, err = v1h.conn.Write(content)
-		total += n
-		if err != nil {
-			return total, err
-		}
-		length -= n
-		content = content[n:]
-	}
-	return total, nil
+	return common.NewCommand(command, parameter, content).Write(v1h.conn)
 }
 
 func handlemaster() {
