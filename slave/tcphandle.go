@@ -27,7 +27,6 @@ type V1Handle struct {
 }
 
 func HandleTcp(ln net.Listener) error {
-	wg.Add(1)
 	defer wg.Done()
 	b := make([]byte, 4)
 	for {
@@ -41,7 +40,7 @@ func HandleTcp(ln net.Listener) error {
 		}
 		if bytes.Equal(b, common.MagicV1) { //the client should first send protocol version first
 			v1h := &V1Handle{}
-			go v1h.IOLoop(conn) //driver by read
+			go v1h.IOLoop(conn) //I am server
 			go v1h.Ping()
 		} else {
 			fmt.Println("un support version", string(b))

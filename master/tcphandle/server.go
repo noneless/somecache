@@ -1,7 +1,6 @@
 package tcphandle
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"net"
@@ -9,7 +8,18 @@ import (
 	"github.com/756445638/somecache/common"
 )
 
-func Server(ln net.Listener) error {
+type Service struct {
+	slaves map[string]SlaveHandler
+}
+
+var service *Service
+
+func init() {
+	service = &Service{}
+	service.slaves = make(map[string]SlaveHandler)
+}
+
+func (s *Service) Server(ln net.Listener) error {
 	defer ln.Close()
 	for {
 		conn, err := ln.Accept()
@@ -23,29 +33,23 @@ func Server(ln net.Listener) error {
 			continue
 		}
 		if bytes.Equal(versionbytes, common.MagicV1) {
-			go (&V1Handler{}).IOLoop(conn)
+			v1s := &V1Slave{conn: conn}
+			v1s.ctx.service = s
+			key := conn.(*net.TCPConn).RemoteAddr().String()
+			service.slaves[key] = v1s
+			go func() {
+				service.slaves[key].CommandLoop()
+			}()
 		} else {
 			fmt.Println("unsupport protocol version")
 		}
-
 	}
 }
 
-type V1Handler struct {
+func Server(ln net.Listener) error {
+	return service.Server(ln)
 }
 
-func (v1h *V1Handler) IOLoop(conn net.Conn) {
-	reader := bufio.NewReader(conn)
-	for {
-		b, err := reader.ReadBytes('\n')
-		if err != nil {
-			break
-		}
-		if b[len(b)-1] == '\r' {
-			b = b[:len(b)-1]
-		}
-
-	}
+type SlaveHandler interface {
+	CommandLoop()
 }
-
-func (v1h *V1Handler) Exec()
