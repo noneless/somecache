@@ -58,6 +58,11 @@ func (m *Map) Add(keys ...string) {
 	sort.Ints(m.keys)
 }
 
+func (m *Map) Empty() {
+	m.keys = []int{}
+	m.hashMap = make(map[int]string)
+}
+
 // Gets the closest item in the hash to the provided key.
 func (m *Map) Get(key string) string {
 	if m.IsEmpty() {

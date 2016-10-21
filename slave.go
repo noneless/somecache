@@ -27,7 +27,6 @@ func main() {
 			slave.Connection2Master(*master)
 			wg.Done()
 		}()
-
 	}
 	wg.Wait()
 }

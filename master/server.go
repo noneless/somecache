@@ -3,21 +3,28 @@ package master
 import (
 	"fmt"
 	"net"
+	"sync"
 	"time"
+
+	"github.com/756445638/somecache/consistenthash"
 )
 
 type Service struct {
 	slaves map[string]*Slave
+	lock   sync.Mutex
+	hash   *consistenthash.Map
 }
 
 var (
 	writeTimeout, readTimeout = 5 * time.Second, 5 * time.Second
 	service                   *Service
+	defaultReplicas           = 50
 )
 
 func init() {
 	service = &Service{}
 	service.slaves = make(map[string]*Slave)
+	service.hash = consistenthash.New(defaultReplicas, nil)
 }
 
 func (s *Service) Server(ln net.Listener) error {
@@ -47,18 +54,46 @@ func (s *Service) Server(ln net.Listener) error {
 		}
 		slave.handle = handler
 		c := make(chan struct{})
-		go func() {
-			go slave.handle.MainLoop(conn, c)
-			select {
-			case <-c: // slave is set up ok,ready to service
-			}
-			s.AddSlave(key, slave)
-		}()
+		go slave.handle.MainLoop(conn, c)
+		select {
+		case <-c: // slave is set up ok,ready to service
+		}
+		s.addSlave(key, slave)
 	}
 }
 
-func (s *Service) AddSlave(key string, slave *Slave) {
+func (s *Service) addSlave(key string, slave *Slave) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	e, ok := s.slaves[key]
+	if ok {
+		e.handle.Close()
+	}
 	s.slaves[key] = slave
+	s.reBuildHash()
+}
+
+func (s *Service) reBuildHash() {
+	s.hash.Empty()
+	keys := make([]string, 0)
+	for k, _ := range s.slaves {
+		keys = append(keys, k)
+	}
+	s.hash.Add(keys...)
+}
+
+func (s *Service) delSlave(key string) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	delete(s.slaves, key)
+	s.reBuildHash()
+}
+
+func (s *Service) getSlave(key string) *Slave {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	key = s.hash.Get(key)
+	return s.slaves[key]
 }
 
 func Server(ln net.Listener) error {

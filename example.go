@@ -10,8 +10,7 @@ import (
 )
 
 var (
-	wg = sync.WaitGroup{}
-
+	wg          = sync.WaitGroup{}
 	tcp_address = flag.Int("tcp-address", 4000, "tcp address")
 )
 
