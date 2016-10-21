@@ -92,14 +92,12 @@ func (v1h *V1Handle) WriteError(reason []byte) (int64, error) {
 	return 0, nil
 }
 func (v1h *V1Handle) GET(para [][]byte) error {
-	if len(para) != 2 {
-		v1h.WriteError([]byte("must be 2 parameters"))
+	if len(para) != 1 {
+		v1h.WriteError([]byte("must have 2 parameters"))
 		return nil
 	}
-	groupname := string(para[1])
-	key := string(para[1])
-	group := groups.getGroup(groupname)
-	v := group.Get(key)
+	key := string(para[0])
+	v := cache.Get(key)
 	if v == nil {
 		v1h.WriteError(common.E_NOT_FOUND)
 		return nil
@@ -111,13 +109,11 @@ func (v1h *V1Handle) GET(para [][]byte) error {
 	para:groupname key
 */
 func (v1h *V1Handle) PUT(para [][]byte) error {
-	if len(para) != 2 {
-		v1h.WriteError([]byte("must be 2 parameters"))
+	if len(para) != 1 {
+		v1h.WriteError([]byte("must have 1 parameters"))
 		return nil
 	}
-	groupname := string(para[1])
-	key := string(para[1])
-	group := groups.getGroup(groupname)
+	key := string(para[0])
 	length_bytes := make([]byte, 4)
 	_, err := io.ReadFull(v1h.conn, length_bytes)
 	if err != nil {
@@ -131,7 +127,7 @@ func (v1h *V1Handle) PUT(para [][]byte) error {
 		v1h.WriteError([]byte(err.Error()))
 		return nil
 	}
-	group.Put(key, common.BytesData(body))
+	cache.Put(key, common.BytesData(body))
 	v1h.Write(common.OK, nil, nil)
 	return nil
 }

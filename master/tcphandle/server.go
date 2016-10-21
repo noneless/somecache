@@ -1,16 +1,13 @@
 package tcphandle
 
 import (
-	"bytes"
 	"fmt"
 	"net"
 	"time"
-
-	"github.com/756445638/somecache/common"
 )
 
 type Service struct {
-	slaves map[string]SlaveHandler
+	slaves map[string]*Slave
 }
 
 var (
@@ -20,7 +17,7 @@ var (
 
 func init() {
 	service = &Service{}
-	service.slaves = make(map[string]SlaveHandler)
+	service.slaves = make(map[string]*Slave)
 }
 
 func (s *Service) Server(ln net.Listener) error {
@@ -37,18 +34,19 @@ func (s *Service) Server(ln net.Listener) error {
 			continue
 		}
 		fmt.Println("accept conn:", string(versionbytes))
-		if bytes.Equal(versionbytes, common.MagicV1) {
-			v1s := &V1Slave{conn: conn}
-			v1s.ctx.service = s
-			key := conn.(*net.TCPConn).RemoteAddr().String()
-			service.slaves[key] = v1s
-			go func() {
-				service.slaves[key].CommandLoop()
-				delete(service.slaves, key)
-			}()
-		} else {
-			fmt.Println("unsupport protocol version")
+		slave := &Slave{service: s}
+		handler, err := newVersionHandler(versionbytes, slave)
+		if err != nil {
+			fmt.Println("unsupport protocol version", string(versionbytes))
+			continue
 		}
+		key := conn.(*net.TCPConn).RemoteAddr().String()
+		if s.slaves == nil {
+			s.slaves = make(map[string]*Slave)
+		}
+		s.slaves[key] = slave
+		slave.handle = handler
+		go slave.handle.MainLoop(conn)
 	}
 }
 
@@ -56,6 +54,6 @@ func Server(ln net.Listener) error {
 	return service.Server(ln)
 }
 
-type SlaveHandler interface {
-	CommandLoop()
+type ProtocolHandler interface {
+	MainLoop(net.Conn)
 }

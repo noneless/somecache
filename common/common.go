@@ -3,7 +3,9 @@ package common
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	"errors"
+	"io"
 	"net"
 )
 
@@ -16,15 +18,16 @@ type TcpServer interface {
 }
 
 var (
-	MagicV1      = []byte("  V1")
-	COMMAND_PUT  = []byte("PUT")
-	COMMAND_GET  = []byte("GET")
-	COMMAND_PING = []byte("PING")
-	E_ERROR      = []byte("E_ERROR")
-	E_NOT_FOUND  = []byte("NOT_FOUND")
-	ENDL         = []byte("\n")
-	OK           = []byte("OK")
-	WhiteSpace   = []byte(" ")
+	MagicV1       = []byte("  V1")
+	COMMAND_PUT   = []byte("PUT")
+	COMMAND_GET   = []byte("GET")
+	COMMAND_PING  = []byte("PING")
+	COMMAND_LOGIN = []byte("LOGIN")
+	E_ERROR       = []byte("E_ERROR")
+	E_NOT_FOUND   = []byte("NOT_FOUND")
+	ENDL          = []byte("\n")
+	OK            = []byte("OK")
+	WhiteSpace    = []byte(" ")
 )
 
 func ParseCommand(line []byte) ([]byte, [][]byte) {
@@ -51,4 +54,17 @@ func ReadLine(reader *bufio.Reader) ([]byte, error) {
 		line = line[0 : len(line)-1]
 	}
 	return line, nil
+}
+
+//read 4 bytes body,body length in 4 bytes bigendian
+func Read4BytesBody(reader *bufio.Reader) ([]byte, int, error) {
+	l := make([]byte, 4)
+	n, err := io.ReadFull(reader, l)
+	if err != nil {
+		return nil, n, err
+	}
+	length := binary.BigEndian.Uint32(l)
+	buf := make([]byte, length)
+	n, err = io.ReadFull(reader, buf)
+	return buf, n, err
 }

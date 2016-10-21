@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"net"
 	"sync"
 )
 
@@ -14,18 +13,12 @@ var (
 
 func main() {
 	flag.Parse()
-	if *master == "" {
-		panic("master is nil string")
-	}
-	if *tcp == "" {
-		panic("tcp is nil string")
-	}
-	ln, err := net.Listen("tcp", *tcp)
-	if err != nil {
-		panic(err)
-	}
+	//	ln, err := net.Listen("tcp", *tcp)
+	//	if err != nil {
+	//		panic(err)
+	//	}
 	wg.Add(2)
-	go HandleTcp(ln)
+	//go HandleTcp(ln)
 	go Connection2Master(*master)
 	wg.Wait()
 }

@@ -2,6 +2,8 @@ package common
 
 import (
 	"bytes"
+	"encoding/binary"
+	"fmt"
 	"io"
 )
 
@@ -42,6 +44,17 @@ func (c *Command) Write(w io.Writer) (int, error) {
 
 	if c.Content != nil && len(c.Content) > 0 {
 		length := len(c.Content)
+		b := make([]byte, 4)
+		binary.BigEndian.PutUint32(b, uint32(length))
+		n, err = w.Write(b)
+		total += n
+		if err != nil {
+			return total, err
+		}
+		if n != 4 {
+			return total, fmt.Errorf("length must be 4")
+		}
+
 		for length > 0 {
 			n, err = w.Write(c.Content)
 			total += n

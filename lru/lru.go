@@ -10,6 +10,7 @@ type Lru struct {
 	maincache    CaChe
 	cachedsize   uint64
 	maxcachesize uint64
+	lock         sync.Mutex
 }
 
 func (l *Lru) GroupName() string {
@@ -34,6 +35,8 @@ func (l *Lru) Get(k string) interface{} {
 
 // will overwrite
 func (l *Lru) Put(k string, v Measureable) (*list.Element, error) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
 	length := v.Measure()
 	if (length + l.cachedsize) > l.maxcachesize { //force to make room for new cache
 		l.cachedsize -= l.maincache.mkroom(length + l.cachedsize - l.maxcachesize)
