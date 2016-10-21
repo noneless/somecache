@@ -1,4 +1,4 @@
-package main
+package slave
 
 import (
 	"github.com/756445638/somecache/lru"

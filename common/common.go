@@ -18,16 +18,18 @@ type TcpServer interface {
 }
 
 var (
-	MagicV1       = []byte("  V1")
-	COMMAND_PUT   = []byte("PUT")
-	COMMAND_GET   = []byte("GET")
-	COMMAND_PING  = []byte("PING")
-	COMMAND_LOGIN = []byte("LOGIN")
-	E_ERROR       = []byte("E_ERROR")
-	E_NOT_FOUND   = []byte("NOT_FOUND")
-	ENDL          = []byte("\n")
-	OK            = []byte("OK")
-	WhiteSpace    = []byte(" ")
+	MagicV1           = []byte("  V1")
+	COMMAND_PUT       = []byte("PUT")
+	COMMAND_GET       = []byte("GET")
+	COMMAND_PING      = []byte("PING")
+	COMMAND_LOGIN     = []byte("LOGIN")
+	E_ERROR           = []byte("E_ERROR")
+	E_PARAMETER_ERROR = []byte("E_PARAMETER_ERROR")
+	E_READ_ERROR      = []byte("E_READ_ERROR")
+	E_NOT_FOUND       = []byte("NOT_FOUND")
+	ENDL              = []byte("\n")
+	OK                = []byte("OK")
+	WhiteSpace        = []byte(" ")
 )
 
 func ParseCommand(line []byte) ([]byte, [][]byte) {

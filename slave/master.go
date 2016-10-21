@@ -1,4 +1,4 @@
-package main
+package slave
 
 import (
 	"bufio"
@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/756445638/somecache/common"
+	"github.com/756445638/somecache/lru"
 	"github.com/756445638/somecache/message"
 )
 
 func Connection2Master(tcp_addr string) {
-	defer wg.Done()
 	for {
 		time.Sleep(time.Second)
 		conn, err := net.Dial("tcp", tcp_addr)
@@ -27,7 +27,9 @@ func Connection2Master(tcp_addr string) {
 			fmt.Println("write magic version v1 failed,err:", err)
 			continue
 		}
-		v1s := &V1Slave{conn: conn}
+		v1s := &V1Slave{
+			conn: conn,
+		}
 		e := v1s.MainLoop()
 		if e != nil {
 			fmt.Println("IOLoop failed,err:", e)
@@ -36,6 +38,7 @@ func Connection2Master(tcp_addr string) {
 }
 
 type V1Slave struct {
+	cache  lru.Lru
 	conn   net.Conn
 	reader *bufio.Reader
 }
@@ -81,9 +84,15 @@ func (v1s *V1Slave) Login() error {
 }
 
 func (v1s *V1Slave) Exec(line []byte) error { // error just for log
-	cmd, _ := common.ParseCommand(line)
+	cmd, para := common.ParseCommand(line)
 	if bytes.Equal(cmd, common.COMMAND_PING) {
 		return v1s.Ping()
+	} else if bytes.Equal(cmd, common.COMMAND_GET) {
+		v1s.Get(para)
+		return nil
+	} else if bytes.Equal(cmd, common.COMMAND_PUT) {
+		v1s.Put(para)
+		return nil
 	} else {
 		v1s.WtiteError(common.E_NOT_FOUND)
 		return errors.New(string(common.E_NOT_FOUND))
@@ -91,6 +100,34 @@ func (v1s *V1Slave) Exec(line []byte) error { // error just for log
 	return nil
 }
 
+func (v1s *V1Slave) Get(para [][]byte) error {
+	if len(para) != 1 {
+		v1s.WtiteError(common.E_PARAMETER_ERROR)
+		return fmt.Errorf("must have 1 parameter")
+	}
+	v := v1s.cache.Get(string(para[0]))
+	if v == nil {
+		v1s.WtiteError(common.E_NOT_FOUND)
+		return nil
+	}
+
+	_, err := common.NewCommand(common.OK, nil, v.(common.BytesData)).Write(v1s.conn)
+	return err
+}
+
+func (v1s *V1Slave) Put(para [][]byte) error {
+	if len(para) != 1 {
+		v1s.WtiteError(common.E_PARAMETER_ERROR)
+		return fmt.Errorf("must have 1 parameter")
+	}
+	key := string(para[0])
+	buf, _, err := common.Read4BytesBody(v1s.reader)
+	if err != nil {
+		v1s.WtiteError(common.E_READ_ERROR)
+	}
+	v1s.cache.Put(key, common.BytesData(buf))
+	return nil
+}
 func (v1s *V1Slave) Ping() error {
 	_, err := common.NewCommand(common.OK, nil, nil).Write(v1s.conn)
 	return err
