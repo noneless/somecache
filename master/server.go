@@ -54,7 +54,10 @@ func (s *Service) Server(ln net.Listener) error {
 		}
 		slave.handle = handler
 		c := make(chan struct{})
-		go slave.handle.MainLoop(conn, c)
+		go func() {
+			slave.handle.MainLoop(conn, c)
+			s.delSlave(key)
+		}()
 		select {
 		case <-c: // slave is set up ok,ready to service
 		}

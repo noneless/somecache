@@ -66,7 +66,6 @@ func (v1s *V1Slave) Login(c chan struct{}) error {
 		return err
 	}
 	c <- struct{}{}
-
 	return nil
 }
 
