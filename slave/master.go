@@ -26,9 +26,10 @@ func Connection2Master(tcp_addr string) {
 			continue
 		}
 		v1s := &V1Slave{conn: conn}
-		go v1s.IOLoop()
-		//go v1s.Routine()
-
+		e := v1s.IOLoop()
+		if e != nil {
+			fmt.Println("IOLoop failed,err:", e)
+		}
 	}
 }
 
@@ -36,22 +37,21 @@ type V1Slave struct {
 	conn net.Conn
 }
 
-func (v1s *V1Slave) IOLoop() {
+func (v1s *V1Slave) IOLoop() error {
 	defer v1s.conn.Close()
 	reader := bufio.NewReader(v1s.conn)
 	for {
-		line, err := reader.ReadBytes('\n')
+		line, err := common.ReadLine(reader)
 		if err != nil {
-			break
+			return err
 		}
-		if len(line) > 0 && line[len(line)-1] == '\r' {
-			line = line[:len(line)-1]
-		}
+		fmt.Printf("read line,data[%s]\n", string(line))
 		err = v1s.Exec(line)
 		if err != nil {
-			fmt.Println("exec failed,err:", err)
+			return err
 		}
 	}
+	return nil
 }
 
 func (v1s *V1Slave) Exec(line []byte) error { // error just for log
@@ -66,7 +66,6 @@ func (v1s *V1Slave) Exec(line []byte) error { // error just for log
 }
 
 func (v1s *V1Slave) Ping() error {
-	fmt.Println("master send ping")
 	_, err := common.NewCommand(common.OK, nil, nil).Write(v1s.conn)
 	return err
 }

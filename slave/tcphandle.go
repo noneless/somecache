@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"sync"
-	"time"
+	//	"sync"
+	//	"time"
 
 	"github.com/756445638/somecache/common"
 )
@@ -23,7 +23,7 @@ type TcpHandle interface {
 
 type V1Handle struct {
 	conn net.Conn
-	sync.Mutex
+	//sync.Mutex
 }
 
 func HandleTcp(ln net.Listener) error {
@@ -41,7 +41,6 @@ func HandleTcp(ln net.Listener) error {
 		if bytes.Equal(b, common.MagicV1) { //the client should first send protocol version first
 			v1h := &V1Handle{}
 			go v1h.IOLoop(conn) //I am server
-			go v1h.Ping()
 		} else {
 			fmt.Println("un support version", string(b))
 		}
@@ -50,17 +49,7 @@ func HandleTcp(ln net.Listener) error {
 
 //
 func (v1h *V1Handle) Ping() {
-	timer := time.NewTicker(time.Second)
-	for {
-		select {
-		case <-timer.C:
-			_, err := v1h.Write(common.COMMAND_PING, nil, nil)
-			if err != nil {
-				fmt.Println("write command ping failed,err:", err)
-			}
-			v1h.conn.Close()
-		}
-	}
+	v1h.Write(common.OK, nil, nil)
 }
 
 func (v1h *V1Handle) IOLoop(conn net.Conn) {
@@ -89,6 +78,8 @@ func (v1h *V1Handle) Exec(line []byte) error {
 		e = v1h.GET(para)
 	} else if bytes.Equal(c, common.COMMAND_PUT) {
 		e = v1h.PUT(para)
+	} else if bytes.Equal(c, common.COMMAND_PING) {
+		v1h.Ping()
 	} else { //
 		v1h.WriteError([]byte(e.Error()))
 	}
@@ -147,8 +138,8 @@ func (v1h *V1Handle) PUT(para [][]byte) error {
 
 //thread safe wirte method,
 func (v1h *V1Handle) Write(command []byte, parameter [][]byte, content []byte) (int, error) {
-	v1h.Lock()
-	defer v1h.Unlock()
+	//	v1h.Lock()
+	//	defer v1h.Unlock()
 	return common.NewCommand(command, parameter, content).Write(v1h.conn)
 }
 

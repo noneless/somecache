@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/756445638/somecache/common"
 )
@@ -12,7 +13,10 @@ type Service struct {
 	slaves map[string]SlaveHandler
 }
 
-var service *Service
+var (
+	writeTimeout, readTimeout = 5 * time.Second, 5 * time.Second
+	service                   *Service
+)
 
 func init() {
 	service = &Service{}
@@ -32,6 +36,7 @@ func (s *Service) Server(ln net.Listener) error {
 			fmt.Println("accept error:", err)
 			continue
 		}
+		fmt.Println("accept conn:", string(versionbytes))
 		if bytes.Equal(versionbytes, common.MagicV1) {
 			v1s := &V1Slave{conn: conn}
 			v1s.ctx.service = s
@@ -39,6 +44,7 @@ func (s *Service) Server(ln net.Listener) error {
 			service.slaves[key] = v1s
 			go func() {
 				service.slaves[key].CommandLoop()
+				delete(service.slaves, key)
 			}()
 		} else {
 			fmt.Println("unsupport protocol version")

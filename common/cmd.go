@@ -20,11 +20,20 @@ func (c *Command) Write(w io.Writer) (int, error) {
 	if err != nil {
 		return total, err
 	}
-	n, err = w.Write(bytes.Join(c.Parameter, WhiteSpace))
-	total += n
-	if err != nil {
-		return total, err
+	//parameter
+	if c.Parameter != nil && len(c.Parameter) > 0 {
+		n, err = w.Write(WhiteSpace)
+		total += n
+		if err != nil {
+			return total, err
+		}
+		n, err = w.Write(bytes.Join(c.Parameter, WhiteSpace))
+		total += n
+		if err != nil {
+			return total, err
+		}
 	}
+	// \n must have to do this
 	n, err = w.Write(ENDL)
 	total += n
 	if err != nil {
