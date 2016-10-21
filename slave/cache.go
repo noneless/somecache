@@ -23,4 +23,4 @@ import (
 
 //}
 
-var cache lru.CaChe
+var cache lru.Lru

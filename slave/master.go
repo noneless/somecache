@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/756445638/somecache/common"
-	"github.com/756445638/somecache/lru"
 	"github.com/756445638/somecache/message"
 )
 
@@ -38,7 +37,6 @@ func Connection2Master(tcp_addr string) {
 }
 
 type V1Slave struct {
-	cache  lru.Lru
 	conn   net.Conn
 	reader *bufio.Reader
 }
@@ -105,7 +103,7 @@ func (v1s *V1Slave) Get(para [][]byte) error {
 		v1s.WtiteError(common.E_PARAMETER_ERROR)
 		return fmt.Errorf("must have 1 parameter")
 	}
-	v := v1s.cache.Get(string(para[0]))
+	v := cache.Get(string(para[0]))
 	if v == nil {
 		v1s.WtiteError(common.E_NOT_FOUND)
 		return nil
@@ -125,7 +123,7 @@ func (v1s *V1Slave) Put(para [][]byte) error {
 	if err != nil {
 		v1s.WtiteError(common.E_READ_ERROR)
 	}
-	v1s.cache.Put(key, common.BytesData(buf))
+	cache.Put(key, common.BytesData(buf))
 	return nil
 }
 func (v1s *V1Slave) Ping() error {

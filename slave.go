@@ -15,8 +15,8 @@ var (
 
 func main() {
 	flag.Parse()
-	if *worker <= 0 {
-		*worker = 1
+	if *worker <= 3 {
+		*worker = 3
 	}
 	if *worker > 10 {
 		*worker = 10
