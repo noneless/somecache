@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/756445638/somecache/common"
@@ -17,8 +17,9 @@ import (
 func newVersionHandler(v []byte, slave *Slave) (ProtocolHandler, error) {
 	if bytes.Equal(v, common.MagicV1) {
 		v1 := &V1Slave{
-			slave:     slave,
-			closechan: make(chan struct{}),
+			slave:       slave,
+			closechan:   make(chan struct{}),
+			commandchan: make(chan *commandFn),
 		}
 		return v1, nil
 
@@ -35,12 +36,19 @@ type Slave struct {
 }
 
 type V1Slave struct {
-	conn      net.Conn
-	reader    *bufio.Reader
-	lock      sync.Mutex
-	ctx       context
-	slave     *Slave
-	closechan chan struct{}
+	stoped      bool
+	t           int64
+	conn        net.Conn
+	reader      *bufio.Reader
+	ctx         context
+	slave       *Slave
+	closechan   chan struct{}
+	commandchan chan *commandFn
+}
+
+type commandFn struct {
+	c  *common.Command
+	fn func(reader io.Reader, size int) error
 }
 
 func (v1s *V1Slave) Login(c chan struct{}) error {
@@ -82,21 +90,29 @@ func (v1s *V1Slave) MainLoop(conn net.Conn, c chan struct{}) {
 	for {
 		select {
 		case <-pingticker.C:
+			v1s.t = time.Now().UnixNano()
 			err := v1s.Ping()
+			v1s.t = -1
 			if err != nil {
 				fmt.Println("ping failed,err:", err)
 				return
 			}
+		case d := <-v1s.commandchan:
+			v1s.t = time.Now().UnixNano()
+			v1s.exec(d.c, d.fn)
+			v1s.t = -1
 		case <-v1s.closechan:
 			break
 		}
 	}
 }
 
+func (v1s *V1Slave) exec(c *common.Command, fn func(reader io.Reader, size int) error) {
+
+}
+
 //ping is  hearbeat
 func (v1s *V1Slave) Ping() error {
-	v1s.lock.Lock()
-	defer v1s.lock.Unlock()
 	v1s.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 	_, err := common.NewCommand(common.COMMAND_PING, nil, nil).Write(v1s.conn)
 	if err != nil {
@@ -116,4 +132,19 @@ func (v1s *V1Slave) Ping() error {
 
 func (v1s *V1Slave) Close() {
 	v1s.closechan <- struct{}{}
+}
+
+//-1 means not busy,positive numbre menas how long I have been busy
+func (v1s *V1Slave) IfBusy() int64 {
+	if v1s.t == -1 {
+		return -1
+	}
+	return time.Now().UnixNano() - v1s.t
+}
+
+func (v1s *V1Slave) Exec(c *common.Command, fn func(reader io.Reader, size int) error) {
+	v1s.commandchan <- &commandFn{
+		c:  c,
+		fn: fn,
+	}
 }

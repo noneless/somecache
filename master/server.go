@@ -2,17 +2,20 @@ package master
 
 import (
 	"fmt"
+	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/756445638/somecache/common"
 	"github.com/756445638/somecache/consistenthash"
 )
 
 type Service struct {
-	slaves map[string]*Slave
-	lock   sync.Mutex
-	hash   *consistenthash.Map
+	hosts map[string]*Host
+	lock  sync.Mutex
+	hash  *consistenthash.Map
 }
 
 var (
@@ -23,7 +26,7 @@ var (
 
 func init() {
 	service = &Service{}
-	service.slaves = make(map[string]*Slave)
+	service.hosts = make(map[string]*Host)
 	service.hash = consistenthash.New(defaultReplicas, nil)
 }
 
@@ -49,54 +52,62 @@ func (s *Service) Server(ln net.Listener) error {
 		}
 		slave.addr = conn.(*net.TCPConn).RemoteAddr()
 		key := slave.addr.String()
-		if s.slaves == nil {
-			s.slaves = make(map[string]*Slave)
+		index := strings.LastIndex(key, ":")
+		if s.hosts == nil {
+			s.hosts = make(map[string]*Host)
 		}
 		slave.handle = handler
 		c := make(chan struct{})
 		go func() {
 			slave.handle.MainLoop(conn, c)
-			s.delSlave(key)
+			s.delSlave(key[0:index], key[index+1:])
 		}()
 		select {
 		case <-c: // slave is set up ok,ready to service
 		}
-		s.addSlave(key, slave)
+		s.addSlave(key[0:index], key[index+1:], slave)
 	}
 }
 
-func (s *Service) addSlave(key string, slave *Slave) {
+func (s *Service) addSlave(host string, port string, slave *Slave) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	e, ok := s.slaves[key]
-	if ok {
-		e.handle.Close()
+	h, ok := s.hosts[host]
+	if !ok {
+		h = &Host{
+			workers: make(map[string]*Slave),
+		}
+		s.hosts[host] = h
 	}
-	s.slaves[key] = slave
+	h.addSlave(port, slave)
 	s.reBuildHash()
 }
 
 func (s *Service) reBuildHash() {
 	s.hash.Empty()
 	keys := make([]string, 0)
-	for k, _ := range s.slaves {
+	for k, _ := range s.hosts {
 		keys = append(keys, k)
 	}
 	s.hash.Add(keys...)
 }
 
-func (s *Service) delSlave(key string) {
+func (s *Service) delSlave(host, port string) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	delete(s.slaves, key)
+	h, ok := s.hosts[host]
+	if ok {
+		h.delSlave(port)
+	}
 	s.reBuildHash()
 }
 
-func (s *Service) getSlave(key string) *Slave {
+//get slave is going to get a download worker
+func (s *Service) getSlave(key string) *Host {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	key = s.hash.Get(key)
-	return s.slaves[key]
+	return s.hosts[key]
 }
 
 func Server(ln net.Listener) error {
@@ -106,4 +117,6 @@ func Server(ln net.Listener) error {
 type ProtocolHandler interface {
 	MainLoop(net.Conn, chan struct{})
 	Close()
+	Exec(c *common.Command, fn func(io.Reader, int) error)
+	IfBusy() int64
 }
