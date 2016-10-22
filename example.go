@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"net/http"
 	"sync"
 
 	"github.com/756445638/somecache/master"
@@ -28,5 +29,14 @@ func main() {
 			fmt.Printf("master.Server server failed,err[%v]\n", err)
 		}
 	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		fileserver()
+	}()
 	wg.Wait()
+}
+
+func fileserver() {
+
 }

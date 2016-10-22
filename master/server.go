@@ -73,14 +73,18 @@ func (s *Service) addSlave(host string, port string, slave *Slave) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	h, ok := s.hosts[host]
+	rebuild := false
 	if !ok {
 		h = &Host{
 			workers: make(map[string]*Slave),
 		}
 		s.hosts[host] = h
+		rebuild = true
 	}
 	h.addSlave(port, slave)
-	s.reBuildHash()
+	if rebuild {
+		s.reBuildHash()
+	}
 }
 
 func (s *Service) reBuildHash() {
@@ -96,18 +100,29 @@ func (s *Service) delSlave(host, port string) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	h, ok := s.hosts[host]
+	rebuild := false
 	if ok {
 		h.delSlave(port)
+		if len(h.workers) == 0 { // no more worker
+			rebuild = true
+			delete(s.hosts, host)
+		}
 	}
-	s.reBuildHash()
+	if rebuild {
+		s.reBuildHash()
+	}
 }
 
 //get slave is going to get a download worker
-func (s *Service) getSlave(key string) *Host {
+func (s *Service) getSlave(key string) *Slave {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	key = s.hash.Get(key)
-	return s.hosts[key]
+	h, ok := s.hosts[key]
+	if !ok {
+		return nil
+	}
+	return h.GetWorker() // get a download worker
 }
 
 func Server(ln net.Listener) error {
