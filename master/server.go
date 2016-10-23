@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/756445638/somecache/common"
 	"github.com/756445638/somecache/consistenthash"
 )
 
@@ -87,6 +86,15 @@ func (s *Service) addSlave(host string, port string, slave *Slave) {
 	}
 }
 
+func (s *Service) Get(key string) ([]byte, error) {
+	worker := s.getSlave(key)
+	if worker == nil {
+		return nil, fmt.Errorf("no worker available")
+	}
+	var b []byte
+	return b, worker.handle.Get(key, &b)
+}
+
 func (s *Service) reBuildHash() {
 	s.hash.Empty()
 	keys := make([]string, 0)
@@ -129,9 +137,13 @@ func Server(ln net.Listener) error {
 	return service.Server(ln)
 }
 
+type getPatamter struct {
+}
+
 type ProtocolHandler interface {
 	MainLoop(net.Conn, chan struct{})
 	Close()
-	Exec(c *common.Command, fn func(io.Reader, int) error)
+	Transfer2Writer(key string, w io.Writer) error // stream way to get cache
+	Get(key string, dest *[]byte) error            // read it to memory
 	IfBusy() int64
 }

@@ -18,8 +18,8 @@ func main() {
 	if *worker <= 3 {
 		*worker = 3
 	}
-	if *worker > 10 {
-		*worker = 10
+	if *worker > 30 {
+		*worker = 30
 	}
 	wg.Add(*worker)
 	for i := 0; i < *worker; i++ {

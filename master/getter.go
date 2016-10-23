@@ -9,3 +9,7 @@ var getter Getter
 func RegisterGetter(g Getter) {
 	getter = g
 }
+
+func Get(k string) ([]byte, error) {
+	return service.Get(k)
+}

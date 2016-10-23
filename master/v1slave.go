@@ -17,9 +17,9 @@ import (
 func newVersionHandler(v []byte, slave *Slave) (ProtocolHandler, error) {
 	if bytes.Equal(v, common.MagicV1) {
 		v1 := &V1Slave{
-			slave:       slave,
-			closechan:   make(chan struct{}),
-			commandchan: make(chan *commandFn),
+			slave:     slave,
+			closechan: make(chan struct{}),
+			jobschan:  make(chan *job),
 		}
 		return v1, nil
 
@@ -28,27 +28,21 @@ func newVersionHandler(v []byte, slave *Slave) (ProtocolHandler, error) {
 	}
 }
 
-type Slave struct {
-	addr         net.Addr
-	service      *Service
-	handle       ProtocolHandler
-	loginmessage *message.Login
-}
-
 type V1Slave struct {
-	stoped      bool
-	t           int64
-	conn        net.Conn
-	reader      *bufio.Reader
-	ctx         context
-	slave       *Slave
-	closechan   chan struct{}
-	commandchan chan *commandFn
+	stoped    bool
+	t         int64
+	conn      net.Conn
+	reader    *bufio.Reader
+	ctx       context
+	slave     *Slave
+	closechan chan struct{}
+	jobschan  chan *job
 }
 
-type commandFn struct {
-	c  *common.Command
-	fn func(reader io.Reader, size int) error
+type job struct {
+	c         *common.Command
+	diff      interface{} //diff is a field can receive any kind of data
+	errorchan chan error
 }
 
 func (v1s *V1Slave) Login(c chan struct{}) error {
@@ -97,18 +91,29 @@ func (v1s *V1Slave) MainLoop(conn net.Conn, c chan struct{}) {
 				fmt.Println("ping failed,err:", err)
 				return
 			}
-		case d := <-v1s.commandchan:
+		case d := <-v1s.jobschan:
 			v1s.t = time.Now().UnixNano()
-			v1s.exec(d.c, d.fn)
+			v1s.exec(d)
 			v1s.t = -1
 		case <-v1s.closechan:
-			break
+			goto exit
 		}
 	}
+exit:
+	close(v1s.closechan)
+	close(v1s.jobschan)
 }
 
-func (v1s *V1Slave) exec(c *common.Command, fn func(reader io.Reader, size int) error) {
+func (v1s *V1Slave) exec(d *job) {
+	var e error
+	if bytes.Equal(d.c.Command, common.COMMAND_GET) {
 
+	} else if bytes.Equal(d.c.Command, common.COMMAND_GET_STREAM) {
+
+	} else {
+		e = fmt.Errorf("no such command")
+	}
+	d.errorchan <- e
 }
 
 //ping is  hearbeat
@@ -142,9 +147,20 @@ func (v1s *V1Slave) IfBusy() int64 {
 	return time.Now().UnixNano() - v1s.t
 }
 
-func (v1s *V1Slave) Exec(c *common.Command, fn func(reader io.Reader, size int) error) {
-	v1s.commandchan <- &commandFn{
-		c:  c,
-		fn: fn,
+func (v1s *V1Slave) Get(key string, dest *[]byte) error {
+	errorchan := make(chan error)
+	v1s.jobschan <- &job{
+		c:         common.NewCommand(common.COMMAND_GET, [][]byte{[]byte(key)}, nil),
+		diff:      dest,
+		errorchan: errorchan,
 	}
+	var e error
+	select {
+	case e = <-errorchan:
+	}
+	return e
+}
+
+func (v1s *V1Slave) Transfer2Writer(key string, w io.Writer) error {
+	return nil
 }
