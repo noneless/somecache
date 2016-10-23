@@ -33,7 +33,7 @@ func (h *Host) GetWorker() *Slave {
 		w = v
 		break
 	}
-	for _, v := range h.workers {
+	for _, v := range h.workers { //find who is worked for longest time
 		if v.handle.IfBusy() > max {
 			max = v.handle.IfBusy()
 			w = v

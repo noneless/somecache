@@ -14,7 +14,6 @@ type Command struct {
 }
 
 //not thread safe
-
 func (c *Command) Write(w io.Writer) (int, error) {
 	total := int(0)
 	n, err := w.Write(c.Command)

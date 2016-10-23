@@ -56,15 +56,20 @@ func (s *Service) Server(ln net.Listener) error {
 			s.hosts = make(map[string]*Host)
 		}
 		slave.handle = handler
-		c := make(chan struct{})
-		go func() {
+		c := make(chan bool)
+		setupok := false
+		go func(sok *bool) {
 			slave.handle.MainLoop(conn, c)
-			s.delSlave(key[0:index], key[index+1:])
-		}()
+			if *sok {
+				s.delSlave(key[0:index], key[index+1:])
+			}
+		}(&setupok)
 		select {
-		case <-c: // slave is set up ok,ready to service
+		case setupok = <-c: // slave is set up ok,ready to server
 		}
-		s.addSlave(key[0:index], key[index+1:], slave)
+		if setupok {
+			s.addSlave(key[0:index], key[index+1:], slave)
+		}
 	}
 }
 
@@ -91,8 +96,7 @@ func (s *Service) Get(key string) ([]byte, error) {
 	if worker == nil {
 		return nil, fmt.Errorf("no worker available")
 	}
-	var b []byte
-	return b, worker.handle.Get(key, &b)
+	return worker.handle.Get(key)
 }
 
 func (s *Service) reBuildHash() {
@@ -137,13 +141,12 @@ func Server(ln net.Listener) error {
 	return service.Server(ln)
 }
 
-type getPatamter struct {
-}
-
 type ProtocolHandler interface {
-	MainLoop(net.Conn, chan struct{})
+	MainLoop(net.Conn, chan bool) //chan bool means if this woker is setup ok
 	Close()
-	Transfer2Writer(key string, w io.Writer) error // stream way to get cache
-	Get(key string, dest *[]byte) error            // read it to memory
+	Get2Stream(key string, w io.Writer) error // stream way to get cache
+	Get(key string) ([]byte, error)           // read it to memory
+	Put(key string, data []byte) error
+	PutFromReader(key string, reader io.Reader) error
 	IfBusy() int64
 }

@@ -23,16 +23,16 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	wg.Add(1)
 	go func() {
-		wg.Add(1)
 		defer wg.Done()
-		err := master.Server(ln)
+		err = master.Server(ln)
 		if err != nil {
 			fmt.Printf("master.Server server failed,err[%v]\n", err)
 		}
 	}()
+	wg.Add(1)
 	go func() {
-		wg.Add(1)
 		defer wg.Done()
 		runBenchMark()
 	}()

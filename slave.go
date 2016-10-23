@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"sync"
+	"time"
 
 	"github.com/756445638/somecache/slave"
 )
@@ -23,6 +24,7 @@ func main() {
 	}
 	wg.Add(*worker)
 	for i := 0; i < *worker; i++ {
+		time.Sleep(time.Second)
 		go func() {
 			slave.Connection2Master(*master)
 			wg.Done()

@@ -18,9 +18,11 @@ func (w *Window) Append(d ...interface{}) {
 	}
 }
 
+var defaultSize int = 10
+
 func New(size int) *Window {
 	if size < 0 {
-		panic("size must be positive number")
+		size = defaultSize
 	}
 	return &Window{size: size, load: []interface{}{}}
 }
