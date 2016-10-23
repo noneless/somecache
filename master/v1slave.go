@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,20 +12,6 @@ import (
 	"github.com/756445638/somecache/common"
 	"github.com/756445638/somecache/message"
 )
-
-func newVersionHandler(v []byte, slave *Slave) (ProtocolHandler, error) {
-	if bytes.Equal(v, common.MagicV1) {
-		v1 := &V1Slave{
-			slave:     slave,
-			closechan: make(chan struct{}),
-			jobschan:  make(chan *job),
-		}
-		return v1, nil
-
-	} else {
-		return nil, errors.New("unkown version")
-	}
-}
 
 type V1Slave struct {
 	stoped    bool

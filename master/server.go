@@ -2,19 +2,20 @@ package master
 
 import (
 	"fmt"
-	"io"
 	"net"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/756445638/somecache/consistenthash"
+	"github.com/756445638/somecache/lru"
 )
 
 type Service struct {
-	hosts map[string]*Host
-	lock  sync.Mutex
-	hash  *consistenthash.Map
+	hosts      map[string]*Host
+	lock       sync.Mutex
+	hash       *consistenthash.Map
+	localcache lru.Lru
 }
 
 var (
@@ -96,7 +97,21 @@ func (s *Service) Get(key string) ([]byte, error) {
 	if worker == nil {
 		return nil, fmt.Errorf("no worker available")
 	}
-	return worker.handle.Get(key)
+	b, err := worker.handle.Get(key)
+	if err == nil {
+		return b, nil
+	}
+	if !strings.Contains(err.Error(), "NOT_FOUND") {
+		return nil, err
+	}
+	if getter == nil {
+		return nil, fmt.Errorf("not found  and getter is not registered")
+	}
+	data, err := getter.Get(key)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 func (s *Service) reBuildHash() {
@@ -134,19 +149,9 @@ func (s *Service) getSlave(key string) *Slave {
 	if !ok {
 		return nil
 	}
-	return h.GetWorker() // get a download worker
+	return h.getWorker() // get a download worker
 }
 
 func Server(ln net.Listener) error {
 	return service.Server(ln)
-}
-
-type ProtocolHandler interface {
-	MainLoop(net.Conn, chan bool) //chan bool means if this woker is setup ok
-	Close()
-	Get2Stream(key string, w io.Writer) error // stream way to get cache
-	Get(key string) ([]byte, error)           // read it to memory
-	Put(key string, data []byte) error
-	PutFromReader(key string, reader io.Reader) error
-	IfBusy() int64
 }

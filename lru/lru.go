@@ -3,6 +3,7 @@ package lru
 import (
 	"container/list"
 	"sync"
+	"sync/atomic"
 )
 
 type Lru struct {
@@ -10,6 +11,7 @@ type Lru struct {
 	maincache    CaChe
 	cachedsize   uint64
 	maxcachesize uint64
+	hit          uint64
 	lock         sync.Mutex
 }
 
@@ -24,12 +26,16 @@ type Measureable interface {
 func (l *Lru) CachedSize() uint64 {
 	return l.cachedsize
 }
+func (l *Lru) Hit() uint64 {
+	return l.hit
+}
 
 func (l *Lru) Get(k string) interface{} {
 	e := l.maincache.Get(k)
 	if e == nil {
 		return nil
 	}
+	atomic.AddUint64(&l.hit, 1)
 	return e.Value
 }
 
