@@ -22,7 +22,7 @@ var (
 
 func signalHandle() {
 	c := make(chan os.Signal)
-	signal.Notify(c, syscall.SIGINT)
+	signal.Notify(c, syscall.SIGINT, syscall.SIGKILL)
 	x := <-c
 	panic(x.String())
 }
@@ -44,11 +44,12 @@ func main() {
 	}()
 	wg.Add(1)
 	go func() {
-		time.Sleep(time.Second * 5)
 		defer wg.Done()
-		for i := 0; i < 5; i++ {
-			runBenchMark()
-		}
+		time.Sleep(time.Second * 5)
+
+		//		for i := 0; i < 5; i++ {
+		//			runBenchMark()
+		//		}
 	}()
 	wg.Wait()
 }

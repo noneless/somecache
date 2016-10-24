@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 )
 
@@ -20,6 +21,7 @@ var (
 	E_PARAMETER_ERROR       = []byte("E_PARAMETER_ERROR")
 	E_READ_ERROR            = []byte("E_READ_ERROR")
 	E_NOT_FOUND             = []byte("NOT_FOUND")
+	E_COMMAND_NOT_FOUND     = []byte("E_COMMAND_NOT_FOUND")
 	ENDL                    = []byte("\n")
 	OK                      = []byte("OK")
 	WhiteSpace              = []byte(" ")
@@ -34,32 +36,42 @@ func ParseCommand(line []byte) ([]byte, [][]byte) {
 
 var packerror error = errors.New("pack error")
 
-func ParseCommandJobid(line []byte) ([]byte, uint64, [][]byte, error) {
-	c, para := ParseCommand(line)
-	if len(para) < 1 {
-		return nil, 0, nil, packerror
-	}
-	if len(para[0]) != 8 {
-		return nil, 0, nil, packerror
-	}
-	return c, binary.BigEndian.Uint64(para[0]), para[1:], nil
-}
+//func ParseCommandJobid(line []byte) ([]byte, uint64, [][]byte, error) {
+//	c, para := ParseCommand(line)
+//	if len(para) < 1 {
+//		return nil, 0, nil, packerror
+//	}
+//	if len(para[0]) != 8 {
+//		return nil, 0, nil, packerror
+//	}
+//	return c, binary.BigEndian.Uint64(para[0]), para[1:], nil
+//}
 
 var EmptyLineError = errors.New("empty line")
 
-func ReadLine(reader *bufio.Reader) ([]byte, error) {
+func ReadLine(reader *bufio.Reader) (uint64, []byte, error) {
+	b := make([]byte, 8)
+	n, err := io.ReadFull(reader, b)
+	if err != nil {
+		return 0, nil, err
+	}
+	if n != 8 {
+		return 0, nil, fmt.Errorf("wrong size")
+	}
+	jobid := binary.BigEndian.Uint64(b)
+
 	line, err := reader.ReadBytes('\n')
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 	if len(line) == 0 {
-		return nil, EmptyLineError
+		return 0, nil, EmptyLineError
 	}
 	line = line[0 : len(line)-1]
 	if len(line) > 0 && line[len(line)-1] == '\r' {
 		line = line[0 : len(line)-1]
 	}
-	return line, nil
+	return jobid, line, nil
 }
 
 /*

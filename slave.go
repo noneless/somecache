@@ -28,8 +28,8 @@ func main() {
 	for i := 0; i < *worker; i++ {
 		time.Sleep(time.Second)
 		go func() {
+			defer wg.Done()
 			slave.Connection2Master(*master, (*cachesize)<<20)
-			wg.Done()
 		}()
 	}
 	wg.Wait()

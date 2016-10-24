@@ -3,7 +3,6 @@ package master
 import (
 	"bufio"
 	"bytes"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,7 +48,7 @@ func (v1s *V1Slave) close() {
 }
 
 func (v1s *V1Slave) Login(c chan bool) error {
-	line, err := common.ReadLine(v1s.reader)
+	_, line, err := common.ReadLine(v1s.reader)
 	if err != nil {
 		return err
 	}
@@ -66,7 +65,7 @@ func (v1s *V1Slave) Login(c chan bool) error {
 		return err
 	}
 	v1s.slave.loginmessage = login
-	_, err = common.NewCommand(common.OK, nil, nil).Write(v1s.conn)
+	_, err = common.NewCommand(common.OK, nil, nil, 0).Write(v1s.conn)
 	if err != nil {
 		return err
 	}
@@ -110,7 +109,10 @@ func (v1s *V1Slave) MainLoop(conn net.Conn, c chan bool) {
 }
 
 func (v1s *V1Slave) writeLoop() error {
+	fmt.Println("write loop")
 	for job := range v1s.jobschan {
+		fmt.Println("###", string(job.c.Command), job.jobid, job.c.Parameter)
+		v1s.conn.SetDeadline(time.Now().Add(time.Second * 30))
 		_, err := job.c.Write(v1s.conn)
 		if err != nil {
 			return err
@@ -122,21 +124,22 @@ func (v1s *V1Slave) writeLoop() error {
 func (v1s *V1Slave) readLoop() error {
 	v1s.reader = bufio.NewReader(v1s.conn)
 	for {
-		line, err := common.ReadLine(v1s.reader)
+		jobid, line, err := common.ReadLine(v1s.reader)
 		if err != nil {
 			fmt.Println("read error:", err)
 			return err
 		}
-		err = v1s.processRead(line)
+		err = v1s.processRead(jobid, line)
 		if err != nil {
 			fmt.Println("process line error:", err)
 		}
 	}
 	return nil
 }
-func (v1s *V1Slave) processRead(line []byte) error {
+func (v1s *V1Slave) processRead(jobid uint64, line []byte) error {
 	var err error
-	c, jobid, _, err := common.ParseCommandJobid(line)
+	c, _ := common.ParseCommand(line)
+	fmt.Printf("read line[%s] raw[%v]", string(line), line)
 	if err != nil {
 		return err
 	}
@@ -144,7 +147,6 @@ func (v1s *V1Slave) processRead(line []byte) error {
 	if !ok {
 		return fmt.Errorf("can`t find job binded on jobid")
 	}
-
 	defer func(e *error) {
 		job.errorchan <- *e
 		delete(v1s.notify, jobid)
@@ -156,19 +158,26 @@ func (v1s *V1Slave) processRead(line []byte) error {
 	if bytes.Equal(job.c.Command, common.COMMAND_GET) {
 		dest := job.diff.(*[]byte)
 		*dest, _, err = common.ReadBody4(v1s.reader, nil)
-	} else if bytes.Equal(job.c.Command, common.COMMAND_PUT) {
+	} else if bytes.Equal(job.c.Command, common.COMMAND_PUT) { //ok is just enough
 		err = nil
+	} else if bytes.Equal(job.c.Command, common.COMMAND_PING) {
+		dest := job.diff.(*[]byte)
+		*dest, _, err = common.ReadBody4(v1s.reader, nil)
 	} else {
 		err = fmt.Errorf("unkown command")
 	}
-
 	return err
 }
 
 func (v1s *V1Slave) pingLoop() error {
 	for {
 		time.Sleep(time.Second)
-		v1s.ping()
+		fmt.Println("master start to ping")
+		js, err := v1s.ping()
+		if err != nil {
+			return err
+		}
+		fmt.Println("ping finished:", string(js))
 	}
 	return nil
 }
@@ -180,9 +189,9 @@ func (v1s *V1Slave) Get(key string) ([]byte, error) {
 	var b []byte
 	errorchan := make(chan error)
 	defer close(errorchan)
-	jobid, b := v1s.newJobId()
+	jobid := v1s.newJobId()
 	job := &job{
-		c:         common.NewCommand(common.COMMAND_GET, [][]byte{b, []byte(key)}, nil),
+		c:         common.NewCommand(common.COMMAND_GET, [][]byte{[]byte(key)}, nil, jobid),
 		diff:      &b,
 		errorchan: errorchan,
 		jobid:     jobid,
@@ -196,19 +205,17 @@ func (v1s *V1Slave) Get(key string) ([]byte, error) {
 	return b, e
 }
 
-func (v1s *V1Slave) newJobId() (uint64, []byte) {
-	jobid := atomic.AddUint64(&v1s.jobid, 1)
-	b := make([]byte, 8)
-	binary.BigEndian.PutUint64(b, jobid)
-	return jobid, b
+func (v1s *V1Slave) newJobId() uint64 {
+	return atomic.AddUint64(&v1s.jobid, 1)
+
 }
 
 func (v1s *V1Slave) Put(key string, data []byte) error {
 	errorchan := make(chan error)
 	defer close(errorchan)
-	jobid, b := v1s.newJobId()
+	jobid := v1s.newJobId()
 	job := &job{
-		c:         common.NewCommand(common.COMMAND_PUT, [][]byte{b, []byte(key)}, data),
+		c:         common.NewCommand(common.COMMAND_PUT, [][]byte{[]byte(key)}, data, jobid),
 		diff:      nil,
 		errorchan: errorchan,
 		jobid:     jobid,
@@ -221,23 +228,25 @@ func (v1s *V1Slave) Put(key string, data []byte) error {
 	}
 	return e
 }
-func (v1s *V1Slave) ping() error {
+
+func (v1s *V1Slave) ping() ([]byte, error) {
 	errorchan := make(chan error)
 	defer close(errorchan)
-	jobid, b := v1s.newJobId()
+	jobid := v1s.newJobId()
+	var dest []byte
 	job := &job{
-		c:         common.NewCommand(common.COMMAND_PING, [][]byte{b}, nil),
-		diff:      nil,
+		c:         common.NewCommand(common.COMMAND_PING, nil, nil, jobid),
+		diff:      &dest,
 		errorchan: errorchan,
 		jobid:     jobid,
 	}
-	v1s.notify[jobid] = job
 	v1s.jobschan <- job
+	v1s.notify[jobid] = job
 	var e error
 	select {
 	case e = <-errorchan:
 	}
-	return e
+	return dest, e
 }
 
 var stopped = errors.New("slave stoped")

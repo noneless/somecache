@@ -1,12 +1,11 @@
 package common
 
 import (
+	"fmt"
 	"testing"
 )
 
 func TestParseCommand(t *testing.T) {
-	s := "get 123"
-	cmd, p := ParseCommand([]byte(s))
-	t.Logf("%s\n", string(cmd))
-	t.Logf("%s\n", string(p[0]))
+	b := []byte{80, 73, 78, 71, 32, 0, 0, 0, 0, 0, 0, 0, 8}
+	fmt.Println(ParseCommandJobid(b))
 }

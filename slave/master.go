@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"sync"
 	"time"
@@ -18,7 +17,6 @@ import (
 func Connection2Master(tcp_addr string, cachesize int64) {
 	cache.SetMaxCacheSize(cachesize)
 	for {
-		time.Sleep(time.Second)
 		conn, err := net.Dial("tcp", tcp_addr)
 		if err != nil {
 			fmt.Println("dail master server failed,err:", err)
@@ -52,19 +50,45 @@ func (v1s *V1Slave) MainLoop() error {
 	if err := v1s.Login(); err != nil {
 		return fmt.Errorf("login failed,err:%v", err)
 	}
+	fmt.Println("login ok")
 	for {
-		now := time.Now()
-		line, err := common.ReadLine(v1s.reader)
-		fmt.Println("$$$$$$$$$$$$$$$read line takes:", time.Now().Sub(now).Seconds())
+		v1s.conn.SetDeadline(time.Now().Add(30 * time.Second))
+		jodid, line, err := common.ReadLine(v1s.reader)
 		if err != nil {
 			return err
 		}
+		fmt.Printf("read line,data[%s] raw[%v]\n", string(line), line)
+		cmd := &common.Command{}
+		err = v1s.Exec(cmd, line)
+		cmd.Jobid = jodid
+		if err != nil {
+			cmd.Command = []byte(err.Error())
+		} else {
+			cmd.Command = common.OK
+		}
+		_, err = cmd.Write(v1s.conn)
+		if err != nil { // write faild,must return,fetal error
+			return err
+		}
+	}
+	return nil
+}
 
-		fmt.Printf("read line,data[%s]\n", string(line))
-		err = v1s.Exec(line)
-		if err != nil {
-			return err
-		}
+//cmd is returen value
+func (v1s *V1Slave) Exec(ret *common.Command, line []byte) error { // error just for log
+	var err error
+	cmd, para := common.ParseCommand(line)
+	if err != nil {
+		return err
+	}
+	if bytes.Equal(cmd, common.COMMAND_PING) {
+		return v1s.Ping(ret)
+	} else if bytes.Equal(cmd, common.COMMAND_GET) {
+		return v1s.Get(ret, para)
+	} else if bytes.Equal(cmd, common.COMMAND_PUT) {
+		return v1s.Put(para)
+	} else {
+		return errors.New(string(common.E_COMMAND_NOT_FOUND))
 	}
 	return nil
 }
@@ -75,11 +99,11 @@ func (v1s *V1Slave) Login() error {
 	if err != nil {
 		return err
 	}
-	_, err = common.NewCommand(common.COMMAND_LOGIN, nil, body).Write(v1s.conn)
+	_, err = common.NewCommand(common.COMMAND_LOGIN, nil, body, 0).Write(v1s.conn)
 	if err != nil {
 		return err
 	}
-	line, err := common.ReadLine(v1s.reader)
+	_, line, err := common.ReadLine(v1s.reader)
 	if err != nil {
 		return err
 	}
@@ -89,58 +113,33 @@ func (v1s *V1Slave) Login() error {
 	return nil
 }
 
-func (v1s *V1Slave) Exec(line []byte) (*common.Command, error) { // error just for log
-	cmd, jodid, para, err := common.ParseCommandJobid(line)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("debug cmd[%s] para[%v]\n", string(cmd), para)
-	if bytes.Equal(cmd, common.COMMAND_PING) {
-		return v1s.Ping(jodid)
-	} else if bytes.Equal(cmd, common.COMMAND_GET) {
-		v1s.Get(jodid, para)
-		return nil
-	} else if bytes.Equal(cmd, common.COMMAND_PUT) {
-		v1s.Put(jodid, para)
-		return nil
-	} else {
-		v1s.WtiteError(common.E_NOT_FOUND)
-		return errors.New(string(common.E_NOT_FOUND))
-	}
-	return nil
-}
-
-func (v1s *V1Slave) Get(jodid uint64, para [][]byte) error {
+func (v1s *V1Slave) Get(ret *common.Command, para [][]byte) error {
 	if len(para) != 1 {
-		v1s.WtiteError(common.E_PARAMETER_ERROR)
 		return fmt.Errorf("must have 1 parameter")
 	}
 	v := cache.Get(string(para[0]))
 	if v == nil {
-		v1s.WtiteError(common.E_NOT_FOUND)
 		return nil
 	}
-	data := v.(*common.BytesData)
-	_, err := common.NewCommand(common.OK, nil, data.Data).Write(v1s.conn)
-	return err
+	data := v.(*common.BytesData).Data
+	ret.Content = data
+	return nil
 }
 
-func (v1s *V1Slave) Put(jodid uint64, para [][]byte) error {
+func (v1s *V1Slave) Put(para [][]byte) error {
 	if len(para) != 1 {
-		v1s.WtiteError(common.E_PARAMETER_ERROR)
 		return fmt.Errorf("must have 1 parameter")
 	}
 	key := string(para[0])
 	buf, _, err := common.ReadBody4(v1s.reader, nil)
 	if err != nil {
-		v1s.WtiteError(common.E_READ_ERROR)
+		return err
 	}
 	d := &common.BytesData{Data: buf, K: key}
-
 	cache.Put(key, d)
 	return nil
 }
-func (v1s *V1Slave) Ping(jodid uint64) error {
+func (v1s *V1Slave) Ping(cmd *common.Command) error {
 	v := v1s.pingpool.Get()
 	if v == nil {
 		v = &message.HeartBeat{}
@@ -156,6 +155,6 @@ func (v1s *V1Slave) Ping(jodid uint64) error {
 	if err != nil {
 		return fmt.Errorf("marshal error:", err)
 	}
-	_, err = common.NewCommand(common.OK, [][]byte{common.Uint642byte(jodid)}, body).Write(v1s.conn)
-	return err
+	cmd.Content = body
+	return nil
 }

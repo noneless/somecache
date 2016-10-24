@@ -11,12 +11,22 @@ type Command struct {
 	Command   []byte
 	Parameter [][]byte
 	Content   []byte
+	Jobid     uint64
 }
 
 //not thread safe
 func (c *Command) Write(w io.Writer) (int, error) {
+	fmt.Printf("write debug[%s]\n", string(c.Command))
 	total := int(0)
-	n, err := w.Write(c.Command)
+
+	jb := Uint642byte(c.Jobid)
+	n, err := w.Write(jb)
+	total += n
+	if err != nil {
+		return total, err
+	}
+
+	n, err = w.Write(c.Command)
 	total += n
 	if err != nil {
 		return total, err
@@ -28,10 +38,14 @@ func (c *Command) Write(w io.Writer) (int, error) {
 		if err != nil {
 			return total, err
 		}
+		bs := bytes.Join(c.Parameter, WhiteSpace)
 		n, err = w.Write(bytes.Join(c.Parameter, WhiteSpace))
 		total += n
 		if err != nil {
 			return total, err
+		}
+		if n != len(bs) {
+			return total, fmt.Errorf("not enough length")
 		}
 	}
 	// \n must have to do this
@@ -67,6 +81,6 @@ func (c *Command) Write(w io.Writer) (int, error) {
 	return total, nil
 }
 
-func NewCommand(command []byte, paras [][]byte, content []byte) *Command {
-	return &Command{command, paras, content}
+func NewCommand(command []byte, paras [][]byte, content []byte, jobid uint64) *Command {
+	return &Command{command, paras, content, jobid}
 }

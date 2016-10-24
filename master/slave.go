@@ -22,6 +22,7 @@ func newVersionHandler(v []byte, slave *Slave) (ProtocolHandler, error) {
 			slave:     slave,
 			closechan: make(chan struct{}),
 			notify:    make(map[uint64]*job),
+			jobschan:  make(chan *job, 1024),
 		}
 		return v1, nil
 	} else {
