@@ -13,7 +13,8 @@ import (
 	"github.com/756445638/somecache/message"
 )
 
-func Connection2Master(tcp_addr string) {
+func Connection2Master(tcp_addr string, cachesize int64) {
+	cache.SetMaxCacheSize(cachesize)
 	for {
 		time.Sleep(time.Second)
 		conn, err := net.Dial("tcp", tcp_addr)
@@ -83,6 +84,7 @@ func (v1s *V1Slave) Login() error {
 
 func (v1s *V1Slave) Exec(line []byte) error { // error just for log
 	cmd, para := common.ParseCommand(line)
+	fmt.Printf("debug cmd[%s] para[%v]\n", string(cmd), para)
 	if bytes.Equal(cmd, common.COMMAND_PING) {
 		return v1s.Ping()
 	} else if bytes.Equal(cmd, common.COMMAND_GET) {
@@ -109,7 +111,9 @@ func (v1s *V1Slave) Get(para [][]byte) error {
 		return nil
 	}
 
-	_, err := common.NewCommand(common.OK, nil, v.(common.BytesData)).Write(v1s.conn)
+	data := v.(*common.BytesData)
+
+	_, err := common.NewCommand(common.OK, nil, data.Data).Write(v1s.conn)
 	return err
 }
 
@@ -119,11 +123,13 @@ func (v1s *V1Slave) Put(para [][]byte) error {
 		return fmt.Errorf("must have 1 parameter")
 	}
 	key := string(para[0])
-	buf, _, err := common.Read4BytesBody(v1s.reader)
+	buf, _, err := common.ReadBody4(v1s.reader, nil)
 	if err != nil {
 		v1s.WtiteError(common.E_READ_ERROR)
 	}
-	cache.Put(key, common.BytesData(buf))
+	d := &common.BytesData{Data: buf, K: key}
+
+	cache.Put(key, d)
 	return nil
 }
 func (v1s *V1Slave) Ping() error {

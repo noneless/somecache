@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/756445638/somecache/common"
@@ -16,6 +18,7 @@ import (
 type V1Slave struct {
 	stoped    bool
 	t         int64
+	lock      sync.Mutex
 	conn      net.Conn
 	reader    *bufio.Reader
 	ctx       context
@@ -28,6 +31,15 @@ type job struct {
 	c         *common.Command
 	diff      interface{} //diff is a field can receive any kind of data
 	errorchan chan error  //errorchan is also an endchanv that will notify caller to exit
+}
+
+func (v1s *V1Slave) close() {
+	v1s.lock.Lock()
+	defer v1s.lock.Unlock()
+	v1s.stoped = true
+	v1s.conn.Close()
+	close(v1s.closechan)
+	close(v1s.jobschan)
 }
 
 func (v1s *V1Slave) Login(c chan bool) error {
@@ -58,11 +70,7 @@ func (v1s *V1Slave) Login(c chan bool) error {
 //main loop
 func (v1s *V1Slave) MainLoop(conn net.Conn, c chan bool) {
 	v1s.conn = conn
-	defer func() {
-		v1s.conn.Close()
-		close(v1s.closechan)
-		close(v1s.jobschan)
-	}()
+	defer v1s.close()
 	v1s.reader = bufio.NewReader(v1s.conn)
 	err := v1s.Login(c)
 	c <- (err == nil)
@@ -192,6 +200,11 @@ func (v1s *V1Slave) IfBusy() int64 {
 }
 
 func (v1s *V1Slave) Get(key string) ([]byte, error) {
+	v1s.lock.Lock()
+	defer v1s.lock.Unlock()
+	if v1s.stoped {
+		return nil, stopped
+	}
 	var b []byte
 	errorchan := make(chan error)
 	v1s.jobschan <- &job{
@@ -207,6 +220,11 @@ func (v1s *V1Slave) Get(key string) ([]byte, error) {
 }
 
 func (v1s *V1Slave) Put(key string, data []byte) error {
+	v1s.lock.Lock()
+	defer v1s.lock.Unlock()
+	if v1s.stoped {
+		return stopped
+	}
 	errorchan := make(chan error)
 	v1s.jobschan <- &job{
 		c:         common.NewCommand(common.COMMAND_PUT, [][]byte{[]byte(key)}, data),
@@ -221,6 +239,11 @@ func (v1s *V1Slave) Put(key string, data []byte) error {
 }
 
 func (v1s *V1Slave) Get2Stream(key string, w io.Writer) error {
+	v1s.lock.Lock()
+	defer v1s.lock.Unlock()
+	if v1s.stoped {
+		return stopped
+	}
 	errorchan := make(chan error)
 	v1s.jobschan <- &job{
 		c:         common.NewCommand(common.COMMAND_GET_STREAM, [][]byte{[]byte(key)}, nil),
@@ -234,7 +257,14 @@ func (v1s *V1Slave) Get2Stream(key string, w io.Writer) error {
 	return e
 }
 
+var stopped = errors.New("slave stoped")
+
 func (v1s *V1Slave) PutFromReader(key string, reader io.Reader) error {
+	v1s.lock.Lock()
+	defer v1s.lock.Unlock()
+	if v1s.stoped {
+		return stopped
+	}
 	errorchan := make(chan error)
 	v1s.jobschan <- &job{
 		c:         common.NewCommand(common.COMMAND_PUT_FROM_READER, [][]byte{[]byte(key)}, nil),

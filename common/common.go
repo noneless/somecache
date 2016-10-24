@@ -28,9 +28,7 @@ var (
 func ParseCommand(line []byte) ([]byte, [][]byte) {
 	t := bytes.Split(line, WhiteSpace)
 	para := [][]byte{}
-	for i := 1; i < len(t)-1; i++ {
-		para = append(para, t[i])
-	}
+	para = append(para, t[1:]...)
 	return t[0], para
 }
 

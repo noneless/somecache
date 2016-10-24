@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/756445638/somecache/common"
 	"github.com/756445638/somecache/consistenthash"
 	"github.com/756445638/somecache/lru"
 )
@@ -22,7 +23,8 @@ type Service struct {
 var (
 	writeTimeout, readTimeout = 5 * time.Second, 5 * time.Second
 	service                   *Service
-	defaultReplicas           = 50
+	defaultReplicas                 = 50
+	defaultCacheSize          int64 = 1 << 30
 )
 
 func init() {
@@ -31,7 +33,16 @@ func init() {
 	service.hash = consistenthash.New(defaultReplicas, nil)
 }
 
+func SetUpCacheSize(size int64) {
+	defaultCacheSize = size
+}
+
+func (s *Service) setDefaultParameter() {
+	s.localcache.SetMaxCacheSize(defaultCacheSize)
+}
+
 func (s *Service) Server(ln net.Listener) error {
+	s.setDefaultParameter()
 	defer ln.Close()
 	for {
 		conn, err := ln.Accept()
@@ -93,25 +104,64 @@ func (s *Service) addSlave(host string, port string, slave *Slave) {
 	}
 }
 
-func (s *Service) Get(key string) ([]byte, error) {
+func (s *Service) getLocalCache(key string) []byte {
+	v := s.localcache.Get(key)
+	if v == nil {
+		return nil
+	}
+	data := v.(*common.BytesData)
+	return data.Data
+}
+func (s *Service) putLocalCache(key string, d []byte) {
+	s.localcache.Put(key, &common.BytesData{K: key, Data: d})
+
+}
+
+func (s *Service) getRemoteCache(key string) ([]byte, error) {
 	worker := s.getSlave(key)
 	if worker == nil {
 		return nil, fmt.Errorf("no worker available")
 	}
-	b, err := worker.handle.Get(key)
-	if err == nil {
-		return b, nil
+	return worker.handle.Get(key)
+}
+
+func (s *Service) putRemoteCache(key string, d []byte) error {
+	worker := s.getSlave(key)
+	if worker == nil {
+		return fmt.Errorf("no worker available")
 	}
-	if !strings.Contains(err.Error(), "NOT_FOUND") {
+	return worker.handle.Put(key, d)
+}
+
+func (s *Service) Get(key string) ([]byte, error) {
+	data := s.getLocalCache(key)
+	if data != nil { // find cache in localcache,nothing to do,just return
+		return data, nil
+	}
+	var err error
+	data, err = s.getRemoteCache(key)
+	if err == nil { // find cache in remote cache,store in local
+		s.putLocalCache(key, data)
+		return data, nil
+	}
+	// not in localcache and not in remotecache
+
+	if !strings.Contains(err.Error(), "NOT_FOUND") { //some error but no "NOT_FOUND"
 		return nil, err
 	}
-	if getter == nil {
+	fmt.Println("remote server:error", err)
+	if getter == nil { //getter is not registed
 		return nil, fmt.Errorf("not found  and getter is not registered")
 	}
-	data, err := getter.Get(key)
+	data, err = getter.Get(key) // call getter returned error
 	if err != nil {
 		return nil, err
 	}
+	s.putLocalCache(key, data)
+	go func() {
+		err := s.putRemoteCache(key, data)
+		fmt.Println("pus in remote server error:", err)
+	}()
 	return data, nil
 }
 

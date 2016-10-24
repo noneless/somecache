@@ -33,17 +33,29 @@ func main() {
 	}()
 	wg.Add(1)
 	go func() {
+		time.Sleep(time.Second * 20)
 		defer wg.Done()
-		runBenchMark()
+		for i := 0; i < 5; i++ {
+			runBenchMark()
+		}
 	}()
 	wg.Wait()
 }
 
 func runBenchMark() {
-	s := 1024 * 1024
+	s := 1024
+	var total time.Duration
 	for i := 0; i < s; i++ {
-
+		now := time.Now()
+		k := fmt.Sprintf("k%d", i)
+		_, err := master.Get(k)
+		if err != nil {
+			fmt.Println("get error:", err)
+		}
+		total += time.Now().Sub(now)
 	}
+	fmt.Println("################# get 1024 * 1024 objects,takes:", total.Seconds())
+
 }
 
 func init() {
@@ -55,9 +67,9 @@ type MemoryGetter struct {
 
 func (MemoryGetter) Get(k string) ([]byte, error) {
 	length := crc32.ChecksumIEEE([]byte(k))
-	length = length % (1024)
+	length = length % (4 * 1024)
 	s := time.Now().String() + k
-	for uint32(len(s)) < length { // almost 1024 bytes
+	for uint32(len(s)) < length { // less than 4 * 1024
 		s += s
 	}
 	return []byte(s), nil

@@ -1,7 +1,15 @@
 package common
 
-type BytesData []byte
+type BytesData struct {
+	Data []byte
+	K    string
+}
 
-func (bd BytesData) Measure() uint64 {
-	return uint64(len(bd))
+func (b *BytesData) Measure() int64 {
+	length := len(b.K) + len(b.Data)
+	return int64(length)
+}
+
+func (b *BytesData) Key() string {
+	return b.K
 }

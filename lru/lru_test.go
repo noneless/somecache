@@ -12,10 +12,10 @@ type el struct {
 	data interface{}
 }
 
-func (e *el) Key() string {
+func (e el) Key() string {
 	return e.key
 }
-func (e *el) Measure() int64 {
+func (e el) Measure() int64 {
 	return int64(len(e.key)) + int64(4)
 }
 
@@ -35,7 +35,7 @@ func Test_lru(t *testing.T) {
 }
 
 func Test_insert(t *testing.T) {
-	l := &Lru{maxcachesize: 500 * 1024 * 1024}
+	l := &Lru{maxcachesize: 90 * 1024 * 1024}
 	l.maincache.lru = l
 	l.maincache.eles = make(map[string]*list.Element)
 	go func() {
@@ -47,12 +47,16 @@ func Test_insert(t *testing.T) {
 		}
 	}()
 	now := time.Now()
-	for i := 0; i < 10*1024*1024; i++ {
-		k := fmt.Sprintf("k%d", i)
-		l.Put(k, &el{key: k, data: i})
-
+	for i := 0; i < 4*1024*1024; i++ {
+		put(l, i)
 	}
+	time.Sleep(1000 * time.Second)
 	fmt.Println(time.Now().Sub(now).Seconds())
+}
+
+func put(l *Lru, i int) {
+	k := fmt.Sprintf("k%d", i)
+	l.Put(k, el{key: k, data: i})
 }
 
 //func BenchmarkPut(b *testing.B) {

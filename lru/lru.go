@@ -16,6 +16,13 @@ type Lru struct {
 	lock         sync.Mutex
 }
 
+func (l *Lru) SetMaxCacheSize(size int64) {
+	l.maxcachesize = size
+}
+func (l *Lru) GetMaxCacheSize() int64 {
+	return l.maxcachesize
+}
+
 func (l *Lru) GroupName() string {
 	return l.groupname
 }

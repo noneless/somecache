@@ -9,9 +9,11 @@ import (
 )
 
 var (
-	master = flag.String("master-tcp-address", "127.0.0.1:4000", "master addr")
-	worker = flag.Int("worker", 1, "worker count")
-	wg     = sync.WaitGroup{}
+	master    = flag.String("master-tcp-address", "127.0.0.1:4000", "master addr")
+	worker    = flag.Int("worker", 4, "worker count")
+	cachesize = flag.Int64("cachesize", 1024, "cachesize in MB")
+
+	wg = sync.WaitGroup{}
 )
 
 func main() {
@@ -26,7 +28,7 @@ func main() {
 	for i := 0; i < *worker; i++ {
 		time.Sleep(time.Second)
 		go func() {
-			slave.Connection2Master(*master)
+			slave.Connection2Master(*master, (*cachesize)<<20)
 			wg.Done()
 		}()
 	}
