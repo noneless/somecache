@@ -25,6 +25,7 @@ type V1Slave struct {
 	slave     *Slave
 	closechan chan struct{}
 	jobschan  chan *job
+	pingpool  sync.Pool
 }
 
 type job struct {
@@ -183,7 +184,36 @@ func (v1s *V1Slave) Ping() error {
 	if !bytes.Equal(res, common.OK) {
 		return fmt.Errorf("slave send response but not OK")
 	}
-	fmt.Printf("slave[%s] process ping ok\n", v1s.slave.addr.String())
+
+	buf, _, err := common.ReadBody4(v1s.reader, nil)
+	if err != nil {
+		return err
+	}
+	v := v1s.pingpool.Get()
+	if v == nil {
+		v = &message.HeartBeat{}
+	}
+	defer v1s.pingpool.Put(v)
+	m := v.(*message.HeartBeat)
+	err = json.Unmarshal(buf, m)
+	if err != nil {
+		return err
+	}
+	fmt.Printf(
+		"slave[%s] process ping ok,details are "+
+			"hit[%d]"+
+			"cachedsize[%d]"+
+			"gets[%d]"+
+			"puts[%d]"+
+			"maxcachesize[%d]\n",
+
+		v1s.slave.addr.String(),
+		m.Lru_hit,
+		m.Lru_cachedsize,
+		m.Lru_gets,
+		m.Lru_puts,
+		m.Lru_maxcachesize,
+	)
 	return nil
 }
 

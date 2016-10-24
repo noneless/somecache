@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/756445638/somecache/common"
@@ -38,8 +39,9 @@ func Connection2Master(tcp_addr string, cachesize int64) {
 }
 
 type V1Slave struct {
-	conn   net.Conn
-	reader *bufio.Reader
+	conn     net.Conn
+	reader   *bufio.Reader
+	pingpool sync.Pool
 }
 
 func (v1s *V1Slave) MainLoop() error {
@@ -110,9 +112,7 @@ func (v1s *V1Slave) Get(para [][]byte) error {
 		v1s.WtiteError(common.E_NOT_FOUND)
 		return nil
 	}
-
 	data := v.(*common.BytesData)
-
 	_, err := common.NewCommand(common.OK, nil, data.Data).Write(v1s.conn)
 	return err
 }
@@ -133,7 +133,22 @@ func (v1s *V1Slave) Put(para [][]byte) error {
 	return nil
 }
 func (v1s *V1Slave) Ping() error {
-	_, err := common.NewCommand(common.OK, nil, nil).Write(v1s.conn)
+	v := v1s.pingpool.Get()
+	if v == nil {
+		v = &message.HeartBeat{}
+	}
+	defer v1s.pingpool.Put(v)
+	m := v.(*message.HeartBeat)
+	m.Lru_hit = cache.Hit()
+	m.Lru_cachedsize = cache.CachedSize()
+	m.Lru_maxcachesize = cache.MaxCacheSize()
+	m.Lru_gets = cache.Gets()
+	m.Lru_puts = cache.Puts()
+	body, err := json.Marshal(m)
+	if err != nil {
+		return fmt.Errorf("marshal error:", err)
+	}
+	_, err = common.NewCommand(common.OK, nil, body).Write(v1s.conn)
 	return err
 }
 

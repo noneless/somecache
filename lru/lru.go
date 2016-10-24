@@ -8,11 +8,12 @@ import (
 )
 
 type Lru struct {
-	groupname    string
 	maincache    CaChe
-	cachedsize   int64
+	cachedsize   int64 `json:"cachedsize"`
 	maxcachesize int64
 	hit          int64
+	gets         int64
+	puts         int64
 	lock         sync.Mutex
 }
 
@@ -23,9 +24,9 @@ func (l *Lru) GetMaxCacheSize() int64 {
 	return l.maxcachesize
 }
 
-func (l *Lru) GroupName() string {
-	return l.groupname
-}
+//func (l *Lru) GroupName() string {
+//	return l.groupname
+//}
 
 type Measureable interface {
 	Measure() int64
@@ -35,11 +36,22 @@ type Measureable interface {
 func (l *Lru) CachedSize() int64 {
 	return l.cachedsize
 }
+func (l *Lru) MaxCacheSize() int64 {
+	return l.maxcachesize
+}
+
 func (l *Lru) Hit() int64 {
 	return atomic.LoadInt64(&l.hit)
 }
+func (l *Lru) Gets() int64 {
+	return l.gets
+}
+func (l *Lru) Puts() int64 {
+	return l.puts
+}
 
 func (l *Lru) Get(k string) interface{} {
+	l.gets++
 	e := l.maincache.Get(k)
 	if e == nil {
 		return nil
@@ -50,6 +62,7 @@ func (l *Lru) Get(k string) interface{} {
 
 // will overwrite
 func (l *Lru) Put(k string, v Measureable) (*list.Element, error) {
+	l.puts++
 	l.lock.Lock()
 	defer l.lock.Unlock()
 	length := v.Measure()
