@@ -2,6 +2,7 @@ package lru
 
 import (
 	"container/list"
+	"fmt"
 	"sync"
 	"sync/atomic"
 )
@@ -9,9 +10,9 @@ import (
 type Lru struct {
 	groupname    string
 	maincache    CaChe
-	cachedsize   uint64
-	maxcachesize uint64
-	hit          uint64
+	cachedsize   int64
+	maxcachesize int64
+	hit          int64
 	lock         sync.Mutex
 }
 
@@ -20,14 +21,15 @@ func (l *Lru) GroupName() string {
 }
 
 type Measureable interface {
-	Measure() uint64
+	Measure() int64
+	Key() string
 }
 
-func (l *Lru) CachedSize() uint64 {
+func (l *Lru) CachedSize() int64 {
 	return l.cachedsize
 }
-func (l *Lru) Hit() uint64 {
-	return l.hit
+func (l *Lru) Hit() int64 {
+	return atomic.LoadInt64(&l.hit)
 }
 
 func (l *Lru) Get(k string) interface{} {
@@ -35,7 +37,7 @@ func (l *Lru) Get(k string) interface{} {
 	if e == nil {
 		return nil
 	}
-	atomic.AddUint64(&l.hit, 1)
+	atomic.AddInt64(&l.hit, 1)
 	return e.Value
 }
 
@@ -55,17 +57,34 @@ func (l *Lru) Put(k string, v Measureable) (*list.Element, error) {
 type CaChe struct {
 	lock sync.RWMutex
 	lis  list.List
+	lru  *Lru
 	eles map[string]*list.Element
 }
 
-func (c *CaChe) mkroom(size uint64) uint64 {
-	var length uint64
-	released := uint64(0)
+//debug method
+func (c *CaChe) travel() {
+	first := c.lis.Front()
+	fmt.Println(first.Value)
+	next := first.Next()
+	for first != next && next != nil {
+		fmt.Println(next.Value)
+		next = next.Next()
+	}
+}
+
+func (c *CaChe) mkroom(size int64) int64 {
+	if c.eles == nil {
+		c.eles = make(map[string]*list.Element)
+	}
+	var length int64
+	released := int64(0)
 	c.lock.Lock()
 	for size > 0 {
 		t := c.lis.Back() //clear
-		length = uint64(t.Value.(Measureable).Measure())
+		m := t.Value.(Measureable)
+		length = m.Measure()
 		c.lis.Remove(t)
+		delete(c.eles, m.Key())
 		size -= length
 		released += length
 	}
@@ -75,7 +94,7 @@ func (c *CaChe) mkroom(size uint64) uint64 {
 
 func (c *CaChe) Get(k string) *list.Element {
 	if c.eles == nil {
-		c.eles = make(map[string]*list.Element)
+		return nil
 	}
 	c.lock.RLock()
 	e, ok := c.eles[k]
@@ -106,9 +125,12 @@ func (c *CaChe) Put(k string, v interface{}) *list.Element {
 	}
 	c.lock.Lock()
 	if e, ok := c.eles[k]; ok {
+		m := e.Value.(Measureable)
 		c.lis.Remove(e)
+		delete(c.eles, m.Key())
+		c.lru.cachedsize -= m.Measure()
 	}
-	e := c.lis.PushBack(v)
+	e := c.lis.PushFront(v)
 	c.eles[k] = e
 	c.lock.Unlock()
 	return e

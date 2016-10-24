@@ -1,6 +1,7 @@
 package master
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -155,3 +156,9 @@ func (s *Service) getSlave(key string) *Slave {
 func Server(ln net.Listener) error {
 	return service.Server(ln)
 }
+
+func validKey(key string) bool {
+	return !strings.Contains(key, "\n")
+}
+
+var InValidKeyError = errors.New("invalid name error")
