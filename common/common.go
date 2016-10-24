@@ -32,6 +32,19 @@ func ParseCommand(line []byte) ([]byte, [][]byte) {
 	return t[0], para
 }
 
+var packerror error = errors.New("pack error")
+
+func ParseCommandJobid(line []byte) ([]byte, uint64, [][]byte, error) {
+	c, para := ParseCommand(line)
+	if len(para) < 1 {
+		return nil, 0, nil, packerror
+	}
+	if len(para[0]) != 8 {
+		return nil, 0, nil, packerror
+	}
+	return c, binary.BigEndian.Uint64(para[0]), para[1:], nil
+}
+
 var EmptyLineError = errors.New("empty line")
 
 func ReadLine(reader *bufio.Reader) ([]byte, error) {
@@ -68,5 +81,10 @@ func ReadBody4(reader *bufio.Reader, w io.Writer) ([]byte, int, error) {
 		x, err := io.CopyN(w, reader, int64(length))
 		return nil, int(x), err
 	}
+}
 
+func Uint642byte(d uint64) []byte {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, d)
+	return b
 }

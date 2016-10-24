@@ -2,6 +2,7 @@ package master
 
 import (
 	"sync"
+	"time"
 )
 
 type Host struct {
@@ -28,27 +29,13 @@ func (h *Host) getWorker() *Slave {
 	if len(h.workers) == 0 {
 		return nil
 	}
-	var w *Slave
+	index := time.Now().Nanosecond() % len(h.workers)
+	i := 0
 	for _, v := range h.workers {
-		if v.handle.IfBusy() == -1 { // not busy
-			w = v
-			break
+		if i == index {
+			return v
 		}
+		i++
 	}
-	if w != nil {
-		return w
-	}
-	var max int64
-	for _, v := range h.workers {
-		max = v.handle.IfBusy()
-		w = v
-		break
-	}
-	for _, v := range h.workers { //find who is worked longest time
-		if v.handle.IfBusy() > max {
-			max = v.handle.IfBusy()
-			w = v
-		}
-	}
-	return w
+	return nil
 }

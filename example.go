@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"hash/crc32"
 	"net"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/756445638/somecache/master"
@@ -17,7 +20,15 @@ var (
 	dir         = flag.String("dir", "", "directory")
 )
 
+func signalHandle() {
+	c := make(chan os.Signal)
+	signal.Notify(c, syscall.SIGINT)
+	x := <-c
+	panic(x.String())
+}
+
 func main() {
+	go signalHandle()
 	flag.Parse()
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", *tcp_address))
 	if err != nil {
@@ -33,7 +44,7 @@ func main() {
 	}()
 	wg.Add(1)
 	go func() {
-		time.Sleep(time.Second * 20)
+		time.Sleep(time.Second * 5)
 		defer wg.Done()
 		for i := 0; i < 5; i++ {
 			runBenchMark()
@@ -67,7 +78,7 @@ type MemoryGetter struct {
 
 func (MemoryGetter) Get(k string) ([]byte, error) {
 	length := crc32.ChecksumIEEE([]byte(k))
-	length = length % (4 * 1024)
+	length = length % (4 * 1024 * 1024)
 	s := time.Now().String() + k
 	for uint32(len(s)) < length { // less than 4 * 1024
 		s += s

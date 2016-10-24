@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -42,6 +43,7 @@ type V1Slave struct {
 	conn     net.Conn
 	reader   *bufio.Reader
 	pingpool sync.Pool
+	lock     sync.Mutex
 }
 
 func (v1s *V1Slave) MainLoop() error {
@@ -51,10 +53,13 @@ func (v1s *V1Slave) MainLoop() error {
 		return fmt.Errorf("login failed,err:%v", err)
 	}
 	for {
+		now := time.Now()
 		line, err := common.ReadLine(v1s.reader)
+		fmt.Println("$$$$$$$$$$$$$$$read line takes:", time.Now().Sub(now).Seconds())
 		if err != nil {
 			return err
 		}
+
 		fmt.Printf("read line,data[%s]\n", string(line))
 		err = v1s.Exec(line)
 		if err != nil {
@@ -84,16 +89,19 @@ func (v1s *V1Slave) Login() error {
 	return nil
 }
 
-func (v1s *V1Slave) Exec(line []byte) error { // error just for log
-	cmd, para := common.ParseCommand(line)
+func (v1s *V1Slave) Exec(line []byte) (*common.Command, error) { // error just for log
+	cmd, jodid, para, err := common.ParseCommandJobid(line)
+	if err != nil {
+		return err
+	}
 	fmt.Printf("debug cmd[%s] para[%v]\n", string(cmd), para)
 	if bytes.Equal(cmd, common.COMMAND_PING) {
-		return v1s.Ping()
+		return v1s.Ping(jodid)
 	} else if bytes.Equal(cmd, common.COMMAND_GET) {
-		v1s.Get(para)
+		v1s.Get(jodid, para)
 		return nil
 	} else if bytes.Equal(cmd, common.COMMAND_PUT) {
-		v1s.Put(para)
+		v1s.Put(jodid, para)
 		return nil
 	} else {
 		v1s.WtiteError(common.E_NOT_FOUND)
@@ -102,7 +110,7 @@ func (v1s *V1Slave) Exec(line []byte) error { // error just for log
 	return nil
 }
 
-func (v1s *V1Slave) Get(para [][]byte) error {
+func (v1s *V1Slave) Get(jodid uint64, para [][]byte) error {
 	if len(para) != 1 {
 		v1s.WtiteError(common.E_PARAMETER_ERROR)
 		return fmt.Errorf("must have 1 parameter")
@@ -117,7 +125,7 @@ func (v1s *V1Slave) Get(para [][]byte) error {
 	return err
 }
 
-func (v1s *V1Slave) Put(para [][]byte) error {
+func (v1s *V1Slave) Put(jodid uint64, para [][]byte) error {
 	if len(para) != 1 {
 		v1s.WtiteError(common.E_PARAMETER_ERROR)
 		return fmt.Errorf("must have 1 parameter")
@@ -132,7 +140,7 @@ func (v1s *V1Slave) Put(para [][]byte) error {
 	cache.Put(key, d)
 	return nil
 }
-func (v1s *V1Slave) Ping() error {
+func (v1s *V1Slave) Ping(jodid uint64) error {
 	v := v1s.pingpool.Get()
 	if v == nil {
 		v = &message.HeartBeat{}
@@ -148,11 +156,6 @@ func (v1s *V1Slave) Ping() error {
 	if err != nil {
 		return fmt.Errorf("marshal error:", err)
 	}
-	_, err = common.NewCommand(common.OK, nil, body).Write(v1s.conn)
-	return err
-}
-
-func (v1s *V1Slave) WtiteError(reason []byte) error {
-	_, err := common.NewCommand(reason, nil, nil).Write(v1s.conn)
+	_, err = common.NewCommand(common.OK, [][]byte{common.Uint642byte(jodid)}, body).Write(v1s.conn)
 	return err
 }

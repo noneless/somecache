@@ -18,10 +18,11 @@ type Service struct {
 	lock       sync.Mutex
 	hash       *consistenthash.Map
 	localcache lru.Lru
+	jobchan    chan *job
 }
 
 var (
-	writeTimeout, readTimeout = 5 * time.Second, 5 * time.Second
+	writeTimeout, readTimeout = 30 * time.Second, 30 * time.Second
 	service                   *Service
 	defaultReplicas                 = 50
 	defaultCacheSize          int64 = 1 << 30
@@ -39,6 +40,7 @@ func SetUpCacheSize(size int64) {
 
 func (s *Service) setDefaultParameter() {
 	s.localcache.SetMaxCacheSize(defaultCacheSize)
+	s.jobchan = make(chan *job, 1024)
 }
 
 func (s *Service) Server(ln net.Listener) error {

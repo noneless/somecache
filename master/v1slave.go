@@ -3,12 +3,13 @@ package master
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/756445638/somecache/common"
@@ -16,19 +17,23 @@ import (
 )
 
 type V1Slave struct {
+	reader    *bufio.Reader
 	stoped    bool
 	t         int64
 	lock      sync.Mutex
 	conn      net.Conn
-	reader    *bufio.Reader
 	ctx       context
 	slave     *Slave
 	closechan chan struct{}
 	jobschan  chan *job
 	pingpool  sync.Pool
+	jobid     uint64
+	notify    map[uint64]*job
+	wg        sync.WaitGroup
 }
 
 type job struct {
+	jobid     uint64
 	c         *common.Command
 	diff      interface{} //diff is a field can receive any kind of data
 	errorchan chan error  //errorchan is also an endchanv that will notify caller to exit
@@ -79,169 +84,111 @@ func (v1s *V1Slave) MainLoop(conn net.Conn, c chan bool) {
 		fmt.Println("login failed,err:", err)
 		return
 	}
-	pingticker := time.NewTicker(time.Second)
-	for {
-		select {
-		case <-pingticker.C:
-			v1s.t = time.Now().UnixNano()
-			err := v1s.Ping()
-			v1s.t = -1
-			if err != nil {
-				fmt.Println("ping failed,err:", err)
-				return
-			}
-		case d := <-v1s.jobschan:
-			v1s.t = time.Now().UnixNano()
-			v1s.exec(d)
-			v1s.t = -1
-		case <-v1s.closechan:
-			goto exit
+	v1s.wg.Add(3)
+	go func() {
+		defer v1s.wg.Done()
+		e := v1s.writeLoop()
+		if e != nil {
+			fmt.Println("loop error:", e)
+		}
+	}()
+	go func() {
+		defer v1s.wg.Done()
+		e := v1s.readLoop()
+		if e != nil {
+			fmt.Println("loop error:", e)
+		}
+	}()
+	go func() {
+		defer v1s.wg.Done()
+		e := v1s.pingLoop()
+		if e != nil {
+			fmt.Println("loop error:", e)
+		}
+	}()
+	v1s.wg.Wait()
+}
+
+func (v1s *V1Slave) writeLoop() error {
+	for job := range v1s.jobschan {
+		_, err := job.c.Write(v1s.conn)
+		if err != nil {
+			return err
 		}
 	}
-exit:
+	return nil
 }
 
-func (v1s *V1Slave) exec(d *job) { //dispath method
-	var e error
-	if bytes.Equal(d.c.Command, common.COMMAND_GET) {
-		e = v1s.get(d)
-	} else if bytes.Equal(d.c.Command, common.COMMAND_GET_STREAM) {
-		e = v1s.get_stream(d)
-	} else if bytes.Equal(d.c.Command, common.COMMAND_PUT) {
-		e = v1s.put(d)
-	} else if bytes.Equal(d.c.Command, common.COMMAND_PUT_FROM_READER) {
-		e = v1s.put_from_reader(d)
+func (v1s *V1Slave) readLoop() error {
+	v1s.reader = bufio.NewReader(v1s.conn)
+	for {
+		line, err := common.ReadLine(v1s.reader)
+		if err != nil {
+			fmt.Println("read error:", err)
+			return err
+		}
+		err = v1s.processRead(line)
+		if err != nil {
+			fmt.Println("process line error:", err)
+		}
+	}
+	return nil
+}
+func (v1s *V1Slave) processRead(line []byte) error {
+	var err error
+	c, jobid, _, err := common.ParseCommandJobid(line)
+	if err != nil {
+		return err
+	}
+	job, ok := v1s.notify[jobid]
+	if !ok {
+		return fmt.Errorf("can`t find job binded on jobid")
+	}
+
+	defer func(e *error) {
+		job.errorchan <- *e
+		delete(v1s.notify, jobid)
+	}(&err)
+	if !bytes.Equal(c, common.OK) {
+		err = fmt.Errorf("slave return error:", string(c))
+		return err
+	}
+	if bytes.Equal(job.c.Command, common.COMMAND_GET) {
+		dest := job.diff.(*[]byte)
+		*dest, _, err = common.ReadBody4(v1s.reader, nil)
+	} else if bytes.Equal(job.c.Command, common.COMMAND_PUT) {
+		err = nil
 	} else {
-		e = fmt.Errorf("no such command")
+		err = fmt.Errorf("unkown command")
 	}
-	d.errorchan <- e
-}
-func (v1s *V1Slave) put_from_reader(d *job) error {
-	err := v1s.writeCommandAndReadOk(d)
-	if err != nil {
-		return err
-	}
-	reader := d.diff.(io.Reader)
-	_, err = io.Copy(v1s.conn, reader)
+
 	return err
 }
 
-func (v1s *V1Slave) writeCommandAndReadOk(d *job) error {
-	_, err := d.c.Write(v1s.conn)
-	if err != nil {
-		return err
-	}
-	line, err := common.ReadLine(v1s.reader)
-	if err != nil {
-		return err
-	}
-	if !bytes.Equal(line, common.OK) {
-		return fmt.Errorf(string(line))
+func (v1s *V1Slave) pingLoop() error {
+	for {
+		time.Sleep(time.Second)
+		v1s.ping()
 	}
 	return nil
 }
-
-func (v1s *V1Slave) get(d *job) error {
-	err := v1s.writeCommandAndReadOk(d)
-	if err != nil {
-		return err
-	}
-	dest := d.diff.(*[]byte)
-	*dest, _, err = common.ReadBody4(v1s.reader, nil)
-	return err
-}
-
-func (v1s *V1Slave) get_stream(d *job) error {
-	err := v1s.writeCommandAndReadOk(d)
-	if err != nil {
-		return err
-	}
-	dest := d.diff.(io.Writer)
-	_, _, err = common.ReadBody4(v1s.reader, dest)
-	return err
-}
-
-func (v1s *V1Slave) put(d *job) error {
-	err := v1s.writeCommandAndReadOk(d)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-//ping is  hearbeat
-func (v1s *V1Slave) Ping() error {
-	v1s.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
-	_, err := common.NewCommand(common.COMMAND_PING, nil, nil).Write(v1s.conn)
-	if err != nil {
-		return err
-	}
-	v1s.conn.SetReadDeadline(time.Now().Add(readTimeout))
-	res, err := common.ReadLine(v1s.reader)
-	if err != nil {
-		return err
-	}
-	if !bytes.Equal(res, common.OK) {
-		return fmt.Errorf("slave send response but not OK")
-	}
-
-	buf, _, err := common.ReadBody4(v1s.reader, nil)
-	if err != nil {
-		return err
-	}
-	v := v1s.pingpool.Get()
-	if v == nil {
-		v = &message.HeartBeat{}
-	}
-	defer v1s.pingpool.Put(v)
-	m := v.(*message.HeartBeat)
-	err = json.Unmarshal(buf, m)
-	if err != nil {
-		return err
-	}
-	fmt.Printf(
-		"slave[%s] process ping ok,details are "+
-			"hit[%d]"+
-			"cachedsize[%d]"+
-			"gets[%d]"+
-			"puts[%d]"+
-			"maxcachesize[%d]\n",
-
-		v1s.slave.addr.String(),
-		m.Lru_hit,
-		m.Lru_cachedsize,
-		m.Lru_gets,
-		m.Lru_puts,
-		m.Lru_maxcachesize,
-	)
-	return nil
-}
-
 func (v1s *V1Slave) Close() {
 	v1s.closechan <- struct{}{}
 }
 
-//-1 means not busy,positive numbre menas how long I have been busy
-func (v1s *V1Slave) IfBusy() int64 {
-	if v1s.t == -1 {
-		return -1
-	}
-	return time.Now().UnixNano() - v1s.t
-}
-
 func (v1s *V1Slave) Get(key string) ([]byte, error) {
-	v1s.lock.Lock()
-	defer v1s.lock.Unlock()
-	if v1s.stoped {
-		return nil, stopped
-	}
 	var b []byte
 	errorchan := make(chan error)
-	v1s.jobschan <- &job{
-		c:         common.NewCommand(common.COMMAND_GET, [][]byte{[]byte(key)}, nil),
+	defer close(errorchan)
+	jobid, b := v1s.newJobId()
+	job := &job{
+		c:         common.NewCommand(common.COMMAND_GET, [][]byte{b, []byte(key)}, nil),
 		diff:      &b,
 		errorchan: errorchan,
+		jobid:     jobid,
 	}
+	v1s.notify[jobid] = job
+	v1s.jobschan <- job
 	var e error
 	select {
 	case e = <-errorchan:
@@ -249,37 +196,43 @@ func (v1s *V1Slave) Get(key string) ([]byte, error) {
 	return b, e
 }
 
+func (v1s *V1Slave) newJobId() (uint64, []byte) {
+	jobid := atomic.AddUint64(&v1s.jobid, 1)
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, jobid)
+	return jobid, b
+}
+
 func (v1s *V1Slave) Put(key string, data []byte) error {
-	v1s.lock.Lock()
-	defer v1s.lock.Unlock()
-	if v1s.stoped {
-		return stopped
-	}
 	errorchan := make(chan error)
-	v1s.jobschan <- &job{
-		c:         common.NewCommand(common.COMMAND_PUT, [][]byte{[]byte(key)}, data),
+	defer close(errorchan)
+	jobid, b := v1s.newJobId()
+	job := &job{
+		c:         common.NewCommand(common.COMMAND_PUT, [][]byte{b, []byte(key)}, data),
 		diff:      nil,
 		errorchan: errorchan,
+		jobid:     jobid,
 	}
+	v1s.notify[jobid] = job
+	v1s.jobschan <- job
 	var e error
 	select {
 	case e = <-errorchan:
 	}
 	return e
 }
-
-func (v1s *V1Slave) Get2Stream(key string, w io.Writer) error {
-	v1s.lock.Lock()
-	defer v1s.lock.Unlock()
-	if v1s.stoped {
-		return stopped
-	}
+func (v1s *V1Slave) ping() error {
 	errorchan := make(chan error)
-	v1s.jobschan <- &job{
-		c:         common.NewCommand(common.COMMAND_GET_STREAM, [][]byte{[]byte(key)}, nil),
-		diff:      w,
+	defer close(errorchan)
+	jobid, b := v1s.newJobId()
+	job := &job{
+		c:         common.NewCommand(common.COMMAND_PING, [][]byte{b}, nil),
+		diff:      nil,
 		errorchan: errorchan,
+		jobid:     jobid,
 	}
+	v1s.notify[jobid] = job
+	v1s.jobschan <- job
 	var e error
 	select {
 	case e = <-errorchan:
@@ -288,22 +241,3 @@ func (v1s *V1Slave) Get2Stream(key string, w io.Writer) error {
 }
 
 var stopped = errors.New("slave stoped")
-
-func (v1s *V1Slave) PutFromReader(key string, reader io.Reader) error {
-	v1s.lock.Lock()
-	defer v1s.lock.Unlock()
-	if v1s.stoped {
-		return stopped
-	}
-	errorchan := make(chan error)
-	v1s.jobschan <- &job{
-		c:         common.NewCommand(common.COMMAND_PUT_FROM_READER, [][]byte{[]byte(key)}, nil),
-		diff:      reader,
-		errorchan: errorchan,
-	}
-	var e error
-	select {
-	case e = <-errorchan:
-	}
-	return e
-}

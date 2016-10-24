@@ -3,7 +3,6 @@ package master
 import (
 	"bytes"
 	"errors"
-	"io"
 	"net"
 
 	"github.com/756445638/somecache/common"
@@ -22,7 +21,7 @@ func newVersionHandler(v []byte, slave *Slave) (ProtocolHandler, error) {
 		v1 := &V1Slave{
 			slave:     slave,
 			closechan: make(chan struct{}),
-			jobschan:  make(chan *job),
+			notify:    make(map[uint64]*job),
 		}
 		return v1, nil
 	} else {
@@ -33,9 +32,6 @@ func newVersionHandler(v []byte, slave *Slave) (ProtocolHandler, error) {
 type ProtocolHandler interface {
 	MainLoop(net.Conn, chan bool) //chan bool means if this woker is setup ok
 	Close()
-	Get2Stream(key string, w io.Writer) error // stream way to get cache
-	Get(key string) ([]byte, error)           // read it to memory
+	Get(key string) ([]byte, error) // read it to memory
 	Put(key string, data []byte) error
-	PutFromReader(key string, reader io.Reader) error
-	IfBusy() int64
 }
