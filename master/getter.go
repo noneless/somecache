@@ -1,5 +1,7 @@
 package master
 
+//	"fmt"
+
 type Getter interface {
 	Get(string) ([]byte, error)
 }
@@ -13,6 +15,9 @@ func RegisterGetter(g Getter) {
 }
 
 func Get(k string) ([]byte, error) {
+	//	if !validKey(k) {
+	//		return nil, fmt.Errorf("key is valid")
+	//	}
 	return service.Get(k)
 }
 

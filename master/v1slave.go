@@ -16,19 +16,20 @@ import (
 )
 
 type V1Slave struct {
-	reader    *bufio.Reader
-	stoped    bool
-	t         int64
-	lock      sync.Mutex
-	conn      net.Conn
-	ctx       context
-	slave     *Slave
-	closechan chan struct{}
-	jobschan  chan *job
-	pingpool  sync.Pool
-	jobid     uint64
-	notify    map[uint64]*job
-	wg        sync.WaitGroup
+	reader      *bufio.Reader
+	stoped      bool
+	t           int64
+	lock        sync.Mutex
+	conn        net.Conn
+	ctx         context
+	slave       *Slave
+	closechan   chan struct{}
+	jobschan    chan *job
+	pingpool    sync.Pool
+	jobid       uint64
+	notify      map[uint64]*job
+	notify_lock sync.Mutex
+	wg          sync.WaitGroup
 }
 
 type job struct {
@@ -139,23 +140,28 @@ func (v1s *V1Slave) readLoop() error {
 func (v1s *V1Slave) processRead(jobid uint64, line []byte) error {
 	var err error
 	c, _ := common.ParseCommand(line)
-	fmt.Printf("read line[%s] raw[%v]", string(line), line)
+	fmt.Printf("read line[%s] raw[%v] jobid[]%d\n", string(line), line, jobid)
 	if err != nil {
 		return err
 	}
+	v1s.notify_lock.Lock()
 	job, ok := v1s.notify[jobid]
+	v1s.notify_lock.Unlock()
 	if !ok {
 		return fmt.Errorf("can`t find job binded on jobid")
 	}
 	defer func(e *error) {
 		job.errorchan <- *e
+		v1s.notify_lock.Lock()
 		delete(v1s.notify, jobid)
+		v1s.notify_lock.Unlock()
 	}(&err)
 	if !bytes.Equal(c, common.OK) {
 		err = fmt.Errorf("slave return error:", string(c))
 		return err
 	}
 	if bytes.Equal(job.c.Command, common.COMMAND_GET) {
+		fmt.Printf("read result")
 		dest := job.diff.(*[]byte)
 		*dest, _, err = common.ReadBody4(v1s.reader, nil)
 	} else if bytes.Equal(job.c.Command, common.COMMAND_PUT) { //ok is just enough
@@ -171,7 +177,7 @@ func (v1s *V1Slave) processRead(jobid uint64, line []byte) error {
 
 func (v1s *V1Slave) pingLoop() error {
 	for {
-		time.Sleep(time.Second)
+		time.Sleep(time.Second * 30)
 		fmt.Println("master start to ping")
 		js, err := v1s.ping()
 		if err != nil {
@@ -196,7 +202,9 @@ func (v1s *V1Slave) Get(key string) ([]byte, error) {
 		errorchan: errorchan,
 		jobid:     jobid,
 	}
+	v1s.notify_lock.Lock()
 	v1s.notify[jobid] = job
+	v1s.notify_lock.Unlock()
 	v1s.jobschan <- job
 	var e error
 	select {
@@ -207,7 +215,6 @@ func (v1s *V1Slave) Get(key string) ([]byte, error) {
 
 func (v1s *V1Slave) newJobId() uint64 {
 	return atomic.AddUint64(&v1s.jobid, 1)
-
 }
 
 func (v1s *V1Slave) Put(key string, data []byte) error {
@@ -220,7 +227,9 @@ func (v1s *V1Slave) Put(key string, data []byte) error {
 		errorchan: errorchan,
 		jobid:     jobid,
 	}
+	v1s.notify_lock.Lock()
 	v1s.notify[jobid] = job
+	v1s.notify_lock.Unlock()
 	v1s.jobschan <- job
 	var e error
 	select {
@@ -241,7 +250,9 @@ func (v1s *V1Slave) ping() ([]byte, error) {
 		jobid:     jobid,
 	}
 	v1s.jobschan <- job
+	v1s.notify_lock.Lock()
 	v1s.notify[jobid] = job
+	v1s.notify_lock.Unlock()
 	var e error
 	select {
 	case e = <-errorchan:

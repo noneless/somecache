@@ -74,7 +74,7 @@ func (v1s *V1Slave) MainLoop() error {
 	return nil
 }
 
-//cmd is returen value
+//ret is returen value
 func (v1s *V1Slave) Exec(ret *common.Command, line []byte) error { // error just for log
 	var err error
 	cmd, para := common.ParseCommand(line)
@@ -119,7 +119,7 @@ func (v1s *V1Slave) Get(ret *common.Command, para [][]byte) error {
 	}
 	v := cache.Get(string(para[0]))
 	if v == nil {
-		return nil
+		return fmt.Errorf(string(common.E_NOT_FOUND))
 	}
 	data := v.(*common.BytesData).Data
 	ret.Content = data

@@ -47,9 +47,9 @@ func main() {
 		defer wg.Done()
 		time.Sleep(time.Second * 5)
 
-		//		for i := 0; i < 5; i++ {
-		//			runBenchMark()
-		//		}
+		for i := 0; i < 5; i++ {
+			runBenchMark()
+		}
 	}()
 	wg.Wait()
 }
