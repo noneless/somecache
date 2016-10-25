@@ -135,6 +135,7 @@ func (s *Service) putRemoteCache(key string, d []byte) error {
 	return worker.handle.Put(key, d)
 }
 
+// main entrance
 func (s *Service) Get(key string) ([]byte, error) {
 	data := s.getLocalCache(key)
 	if data != nil { // find cache in localcache,nothing to do,just return
@@ -148,10 +149,11 @@ func (s *Service) Get(key string) ([]byte, error) {
 	}
 	// not in localcache and not in remotecache
 
-	if !strings.Contains(err.Error(), "NOT_FOUND") { //some error but no "NOT_FOUND"
+	if !strings.Contains(err.Error(), "NOT_FOUND") && !strings.Contains(err.Error(), "timeout") {
+		//some error but no "NOT_FOUND",it is a not very serious error
 		return nil, err
 	}
-	fmt.Println("remote server:error", err)
+	fmt.Println("remote server error:", err)
 	if getter == nil { //getter is not registed
 		return nil, fmt.Errorf("not found  and getter is not registered")
 	}

@@ -52,7 +52,7 @@ func (v1s *V1Slave) MainLoop() error {
 	}
 	fmt.Println("login ok")
 	for {
-		v1s.conn.SetDeadline(time.Now().Add(30 * time.Second))
+		v1s.conn.SetDeadline(time.Now().Add(60 * time.Second))
 		jodid, line, err := common.ReadLine(v1s.reader)
 		if err != nil {
 			return err
@@ -114,6 +114,7 @@ func (v1s *V1Slave) Login() error {
 }
 
 func (v1s *V1Slave) Get(ret *common.Command, para [][]byte) error {
+	//	time.Sleep(5 * time.Second)
 	if len(para) != 1 {
 		return fmt.Errorf("must have 1 parameter")
 	}

@@ -100,3 +100,13 @@ func Uint642byte(d uint64) []byte {
 	binary.BigEndian.PutUint64(b, d)
 	return b
 }
+
+type TimeoutError struct {
+	Err string
+}
+
+func (t *TimeoutError) Error() string {
+	return t.Err
+}
+
+var TimeOutErr *TimeoutError = &TimeoutError{"timeout"}

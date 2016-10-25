@@ -9,3 +9,5 @@ high performance and scalable memory cache system
 
 #slave 
 	it is a node save you data in memory
+
+somecache is written in pure golang

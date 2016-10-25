@@ -84,7 +84,7 @@ func (v1s *V1Slave) MainLoop(conn net.Conn, c chan bool) {
 		fmt.Println("login failed,err:", err)
 		return
 	}
-	v1s.wg.Add(3)
+	v1s.wg.Add(4)
 	go func() {
 		defer v1s.wg.Done()
 		e := v1s.writeLoop()
@@ -106,7 +106,32 @@ func (v1s *V1Slave) MainLoop(conn net.Conn, c chan bool) {
 			fmt.Println("loop error:", e)
 		}
 	}()
+	go func() {
+		v1s.timeoutTick()
+	}()
 	v1s.wg.Wait()
+}
+
+//it is a runtime send timeouterror to errorchan
+func (v1s *V1Slave) timeoutTick() {
+	f := func() {
+		defer func() {
+			x := recover()
+			if x != nil {
+				fmt.Printf("panic[%v] recovered\n", x)
+			}
+		}()
+		for _, v := range v1s.notify {
+			v.errorchan <- common.TimeOutErr
+		}
+	}
+	ticker := time.NewTicker(time.Second)
+	for !v1s.stoped {
+		select {
+		case <-ticker.C:
+			f()
+		}
+	}
 }
 
 func (v1s *V1Slave) writeLoop() error {
@@ -138,6 +163,12 @@ func (v1s *V1Slave) readLoop() error {
 	return nil
 }
 func (v1s *V1Slave) processRead(jobid uint64, line []byte) error {
+	defer func() {
+		x := recover()
+		if x != nil {
+			fmt.Printf("panic[%v] recovered\n", x)
+		}
+	}()
 	var err error
 	c, _ := common.ParseCommand(line)
 	fmt.Printf("read line[%s] raw[%v] jobid[]%d\n", string(line), line, jobid)
@@ -206,11 +237,25 @@ func (v1s *V1Slave) Get(key string) ([]byte, error) {
 	v1s.notify[jobid] = job
 	v1s.notify_lock.Unlock()
 	v1s.jobschan <- job
-	var e error
-	select {
-	case e = <-errorchan:
+	return b, v1s.selectTimeout(errorchan)
+}
+
+func (v1s *V1Slave) selectTimeout(ch chan error) error {
+	i := 0
+	for {
+		select {
+		case err := <-ch:
+			_, ok := err.(*common.TimeoutError) //not time out,ok just return
+			if !ok {
+				return err
+			}
+			i++
+			if i == 2 { //after 2 error was received,I am sure that this chan has been lived for 1~2 second,that`s it
+				return err
+			}
+		}
 	}
-	return b, e
+	return nil
 }
 
 func (v1s *V1Slave) newJobId() uint64 {
@@ -231,11 +276,7 @@ func (v1s *V1Slave) Put(key string, data []byte) error {
 	v1s.notify[jobid] = job
 	v1s.notify_lock.Unlock()
 	v1s.jobschan <- job
-	var e error
-	select {
-	case e = <-errorchan:
-	}
-	return e
+	return v1s.selectTimeout(errorchan)
 }
 
 func (v1s *V1Slave) ping() ([]byte, error) {
@@ -253,11 +294,7 @@ func (v1s *V1Slave) ping() ([]byte, error) {
 	v1s.notify_lock.Lock()
 	v1s.notify[jobid] = job
 	v1s.notify_lock.Unlock()
-	var e error
-	select {
-	case e = <-errorchan:
-	}
-	return dest, e
+	return dest, v1s.selectTimeout(errorchan)
 }
 
 var stopped = errors.New("slave stoped")
