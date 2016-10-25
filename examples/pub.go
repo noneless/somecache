@@ -97,7 +97,7 @@ func get(s string) {
 		fmt.Println("err:", err)
 		return
 	}
-	fmt.Println(string(data))
+	fmt.Println("geted:", string(data))
 }
 
 func put(s string) {

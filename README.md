@@ -13,7 +13,7 @@ high performance and scalable memory cache system
 	
 #use case 
 	go get github.com/756445638/somecache
-	cd $GOPATH/github.com/756445638/somecache
+	cd ${GOPATH}/src/github.com/756445638/somecache
 	go run  examples/pub.go 
 	go run slave.go -cachesize 500 -worker=3   //worker is like a donwload thread
 	go run slave.go -cachesize 500 -worker 2 -master-tcp-address 192.168.1.8:4000
@@ -27,4 +27,6 @@ high performance and scalable memory cache system
 		put aaa bbb
 	put&get with "remote" will  work wite slave,it is a debug option,in production should look localcache first
 
-somecache is written in pure golang
+
+somecache is written in pure golang,somecache is not stable currently,welcome to test,debug,pull, fork,and advise!!
+approiate anything
