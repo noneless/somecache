@@ -160,10 +160,12 @@ func (c *CaChe) Put(k string, v interface{}) *list.Element {
 	}
 	c.lock.Lock()
 	if e, ok := c.eles[k]; ok {
-		m := e.Value.(Measureable)
-		c.lis.Remove(e)
-		delete(c.eles, m.Key())
-		c.lru.cachedsize -= m.Measure()
+		m, ok := e.Value.(Measureable)
+		if ok && m != nil {
+			c.lis.Remove(e)
+			delete(c.eles, m.Key())
+			c.lru.cachedsize -= m.Measure()
+		}
 	}
 	e := c.lis.PushFront(v)
 	c.eles[k] = e

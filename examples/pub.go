@@ -19,16 +19,13 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	"hash/crc32"
 	"net"
 	"os"
 	"os/signal"
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 
-	"github.com/756445638/somecache/common"
 	"github.com/756445638/somecache/master"
 )
 
@@ -60,11 +57,65 @@ func main() {
 	}()
 	reader := bufio.NewReader(os.Stdin)
 	var s string
-	var err error
 	for err == nil {
+		s, err = reader.ReadString('\n')
+		s = strings.TrimRight(s, "\n")
+		if s == "" {
+			continue
+		}
+		if strings.HasPrefix(s, "get ") {
+			s = strings.TrimLeft(s, "get ")
+			s = strings.TrimLeft(s, " ")
+			get(s)
+		} else if strings.HasPrefix(s, "put ") {
+			s = strings.TrimLeft(s, "put ")
+			s = strings.TrimLeft(s, " ")
+			put(s)
+		} else {
+			fmt.Println("unkown command")
+		}
+	}
+	wg.Add(1)
+}
 
+func get(s string) {
+	remote := false
+	if strings.HasPrefix(s, "remote ") {
+		s = strings.TrimLeft(s, "remote ")
+		remote = true
+	}
+	s = strings.TrimLeft(s, " ")
+	s = strings.TrimRight(s, " ")
+	var data []byte
+	var err error
+	if remote { //get remote just for test ,in porduction alway look localcache first
+		data, err = master.GetFromRemoteServer(s)
+	} else {
+		data, err = master.Get(s)
+	}
+	if err != nil {
+		fmt.Println("err:", err)
+		return
+	}
+	fmt.Println(string(data))
+}
+
+func put(s string) {
+	remote := false
+	if strings.HasPrefix(s, "remote ") {
+		s = strings.TrimLeft(s, "remote ")
+		remote = true
+	}
+	s = strings.TrimLeft(s, " ")
+	s = strings.TrimRight(s, " ")
+	t := strings.Split(s, " ")
+	if len(t) < 2 {
+		fmt.Println("paramter error")
+		return
 	}
 
-	wg.Add(1)
+	key := t[0]
+	data := []byte(t[1])
+	master.Put(key, data, remote)
 
 }

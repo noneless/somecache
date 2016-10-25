@@ -12,11 +12,19 @@ high performance and scalable memory cache system
 	slave is a standalone program
 	
 #use case 
-	example.go is program that after it has been started ,it will push a lot of data in server,you can see a lot of
-	"print" dont`t be nervous
+	go get github.com/756445638/somecache
+	cd $GOPATH/github.com/756445638/somecache
+	go run  examples/pub.go 
 	go run slave.go -cachesize 500 -worker=3   //worker is like a donwload thread
 	go run slave.go -cachesize 500 -worker 2 -master-tcp-address 192.168.1.8:4000
-	go run example.go 
 	
+	there are some other messages dump into stdout,dont`t mind it to much
+	pub.go is tool that read from stdio,and get or put message 
+	support cmds are:
+		get remote aaa
+		get aaa
+		put remote aaa bbb 
+		put aaa bbb
+	put&get with "remote" will  work wite slave,it is a debug option,in production should look localcache first
 
 somecache is written in pure golang

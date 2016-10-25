@@ -34,10 +34,9 @@ type Slave struct {
 func newVersionHandler(v []byte, slave *Slave) (ProtocolHandler, error) {
 	if bytes.Equal(v, common.MagicV1) {
 		v1 := &V1Slave{
-			slave:     slave,
-			closechan: make(chan struct{}),
-			notify:    make(map[uint64]*job),
-			jobschan:  make(chan *job, 1024),
+			slave:    slave,
+			notify:   make(map[uint64]*job),
+			jobschan: make(chan *job, 1024),
 		}
 		return v1, nil
 	} else {
@@ -46,8 +45,7 @@ func newVersionHandler(v []byte, slave *Slave) (ProtocolHandler, error) {
 }
 
 type ProtocolHandler interface {
-	MainLoop(net.Conn, chan bool) //chan bool means if this woker is setup ok
-	Close()
+	MainLoop(net.Conn, chan bool)   //chan bool means if this woker is setup ok
 	Get(key string) ([]byte, error) // read it to memory
 	Put(key string, data []byte) error
 }

@@ -38,13 +38,11 @@ type V1Slave struct {
 	conn        net.Conn
 	ctx         context
 	slave       *Slave
-	closechan   chan struct{}
 	jobschan    chan *job
 	pingpool    sync.Pool
 	jobid       uint64
 	notify      map[uint64]*job
 	notify_lock sync.Mutex
-	wg          sync.WaitGroup
 }
 
 type job struct {
@@ -54,13 +52,10 @@ type job struct {
 	errorchan chan error  //errorchan is also an endchanv that will notify caller to exit
 }
 
-func (v1s *V1Slave) close() {
+func (v1s *V1Slave) ifstoped() bool {
 	v1s.lock.Lock()
 	defer v1s.lock.Unlock()
-	v1s.stoped = true
-	v1s.conn.Close()
-	close(v1s.closechan)
-	close(v1s.jobschan)
+	return v1s.stoped
 }
 
 func (v1s *V1Slave) Login(c chan bool) error {
@@ -91,7 +86,7 @@ func (v1s *V1Slave) Login(c chan bool) error {
 //main loop
 func (v1s *V1Slave) MainLoop(conn net.Conn, c chan bool) {
 	v1s.conn = conn
-	defer v1s.close()
+	defer v1s.Close()
 	v1s.reader = bufio.NewReader(v1s.conn)
 	err := v1s.Login(c)
 	c <- (err == nil)
@@ -99,32 +94,24 @@ func (v1s *V1Slave) MainLoop(conn net.Conn, c chan bool) {
 		fmt.Println("login failed,err:", err)
 		return
 	}
-	v1s.wg.Add(4)
+	errchan := make(chan error)
 	go func() {
-		defer v1s.wg.Done()
-		e := v1s.writeLoop()
-		if e != nil {
-			fmt.Println("loop error:", e)
-		}
+		errchan <- v1s.writeLoop()
 	}()
 	go func() {
-		defer v1s.wg.Done()
-		e := v1s.readLoop()
-		if e != nil {
-			fmt.Println("loop error:", e)
-		}
+		errchan <- v1s.readLoop()
 	}()
 	go func() {
-		defer v1s.wg.Done()
-		e := v1s.pingLoop()
-		if e != nil {
-			fmt.Println("loop error:", e)
-		}
+		errchan <- v1s.pingLoop()
 	}()
 	go func() {
 		v1s.timeoutTick()
+		errchan <- nil
 	}()
-	v1s.wg.Wait()
+	e := <-errchan
+	if err != nil {
+		fmt.Println("err poped:", e)
+	}
 }
 
 //it is a runtime send timeouterror to errorchan
@@ -184,7 +171,7 @@ func (v1s *V1Slave) processRead(jobid uint64, line []byte) error {
 	}()
 	var err error
 	c, _ := common.ParseCommand(line)
-	fmt.Printf("read line[%s] raw[%v] jobid[]%d\n", string(line), line, jobid)
+	fmt.Printf("read line[%s] raw[%v] jobid[%d]\n", string(line), line, jobid)
 	if err != nil {
 		return err
 	}
@@ -222,6 +209,9 @@ func (v1s *V1Slave) processRead(jobid uint64, line []byte) error {
 func (v1s *V1Slave) pingLoop() error {
 	for {
 		time.Sleep(time.Second * 30)
+		if v1s.stoped {
+			return stoppedError
+		}
 		fmt.Println("master start to ping")
 		js, err := v1s.ping()
 		if err != nil {
@@ -232,10 +222,17 @@ func (v1s *V1Slave) pingLoop() error {
 	return nil
 }
 func (v1s *V1Slave) Close() {
-	v1s.closechan <- struct{}{}
+	v1s.lock.Lock()
+	defer v1s.lock.Unlock()
+	v1s.stoped = true
+	v1s.conn.Close()
+	close(v1s.jobschan)
 }
 
 func (v1s *V1Slave) Get(key string) ([]byte, error) {
+	if v1s.ifstoped() {
+		return nil, stoppedError
+	}
 	var b []byte
 	errorchan := make(chan error)
 	defer close(errorchan)
@@ -276,6 +273,9 @@ func (v1s *V1Slave) newJobId() uint64 {
 }
 
 func (v1s *V1Slave) Put(key string, data []byte) error {
+	if v1s.ifstoped() {
+		return stoppedError
+	}
 	errorchan := make(chan error)
 	defer close(errorchan)
 	jobid := v1s.newJobId()
@@ -310,4 +310,4 @@ func (v1s *V1Slave) ping() ([]byte, error) {
 	return dest, v1s.selectTimeout(errorchan)
 }
 
-var stopped = errors.New("slave stoped")
+var stoppedError = errors.New("slave stoped")

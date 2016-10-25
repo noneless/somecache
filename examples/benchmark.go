@@ -70,7 +70,7 @@ func main() {
 }
 
 func runBenchMark() {
-	s := 1024 * 500
+	s := 1024 * 50
 	var total time.Duration
 	for i := 0; i < s; i++ {
 		now := time.Now()
