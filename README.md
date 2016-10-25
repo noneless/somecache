@@ -9,5 +9,14 @@ high performance and scalable memory cache system
 
 #slave 
 	it is a node save you data in memory
+	slave is a standalone program
+	
+#use case 
+	example.go is program that after it has been started ,it will push a lot of data in server,you can see a lot of
+	"print" dont`t be nervous
+	go run slave.go -cachesize 500 -worker=3   //worker is like a donwload thread
+	go run slave.go -cachesize 500 -worker 2 -master-tcp-address 192.168.1.8:4000
+	go run example.go 
+	
 
 somecache is written in pure golang

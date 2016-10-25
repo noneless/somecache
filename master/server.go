@@ -184,6 +184,16 @@ func (s *Service) Get(key string) ([]byte, error) {
 	return data, nil
 }
 
+//remote is decide push to remote server
+func (s *Service) Put(key string, value []byte, remote bool) {
+	s.localcache.Put(key, &common.BytesData{K: key, Data: value})
+	if !remote {
+		return
+	}
+	go s.putRemoteCache(key, value)
+
+}
+
 func (s *Service) reBuildHash() {
 	s.hash.Empty()
 	keys := make([]string, 0)
