@@ -61,7 +61,6 @@ func main() {
 	go func() {
 		defer wg.Done()
 		time.Sleep(time.Second * 5)
-
 		for i := 0; i < 5; i++ {
 			runBenchMark()
 		}
@@ -70,7 +69,7 @@ func main() {
 }
 
 func runBenchMark() {
-	s := 1024 * 50
+	s := 1024 * 5
 	var total time.Duration
 	for i := 0; i < s; i++ {
 		now := time.Now()

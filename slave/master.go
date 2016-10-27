@@ -25,7 +25,6 @@ import (
 	"log"
 	"net"
 	"sync"
-	"time"
 
 	"github.com/756445638/somecache/common"
 	"github.com/756445638/somecache/message"
@@ -49,7 +48,7 @@ func Connection2Master(tcp_addr string, cachesize int64) {
 		}
 		e := v1s.MainLoop()
 		if e != nil {
-			log.Printf("warn:IOLoop failed,err:%v", e)
+			log.Printf("error:IOLoop failed,err:%v", e)
 		}
 	}
 }
@@ -65,20 +64,19 @@ func (v1s *V1Slave) MainLoop() error {
 	defer v1s.conn.Close()
 	v1s.reader = bufio.NewReader(v1s.conn)
 	if err := v1s.Login(); err != nil {
-		return fmt.Errorf("login failed,err:%v", err)
+		return fmt.Errorf("loginas failed,err:%v", err)
 	}
 	log.Printf("debug: login ok")
 	for {
-		v1s.conn.SetDeadline(time.Now().Add(60 * time.Second))
+		//		v1s.conn.SetDeadline(time.Now().Add(3 * time.Second))
 		jodid, line, err := common.ReadLine(v1s.conn.(*net.TCPConn))
 		if err != nil && err != io.EOF {
 			return err
 		}
-		log.Printf("debug: read line,data[%s]\n", string(line))
 		if len(line) == 0 {
-			//log.Println("warn: line length is 0")
 			continue
 		}
+		log.Printf("debug: read line,data[%s]\n", string(line))
 		cmd := &common.Command{}
 		err = v1s.Exec(cmd, line)
 		cmd.Jobid = jodid

@@ -20,7 +20,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	//	"fmt"
 	"io"
+	"time"
 )
 
 var (
@@ -72,35 +74,37 @@ func ReadLine(r io.Reader) (uint64, []byte, error) {
 	}
 	return jobid, line, nil
 }
+func halt(t time.Duration) {
+	time.Sleep(t)
+}
 
 func readJobId(r io.Reader) (uint64, error) {
-	//	start := time.Now()
-	//	defer func() {
-	//		fmt.Println("read jobid,usd:", time.Now().Sub(start).Seconds())
-	//	}()
 	length := 8
 	bs := make([]byte, length)
+	rd := 0
 	for length > 0 {
-		n, err := io.ReadFull(r, bs)
+		n, err := r.Read(bs[rd:])
 		if err != nil && err != io.EOF {
 			return 0, err
 		}
 		length -= n
+		rd += n
 	}
 
 	return binary.BigEndian.Uint64(bs), nil
 }
 
-//rd := 0
-//	for length > 0 {
-//		n, err := reader.Read(bs[rd:])
-//		fmt.Println(n, err)
-//		if err != nil && err != io.EOF {
-//			return 0, nil
-//		}
-//		length -= n
-//		rd += n
+//func readJobId(r io.Reader) (uint64, error) {
+//	bs := make([]byte, 8)
+//	n, err := io.ReadFull(r, bs)
+//	if err != nil {
+//		return 0, err
 //	}
+//	if n != 8 {
+//		return 0, fmt.Errorf("wrong size")
+//	}
+//	return binary.BigEndian.Uint64(bs), nil
+//}
 
 /*
 	read 4 bytes body,body length in 4 bytes bigendian

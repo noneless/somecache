@@ -108,17 +108,21 @@ func (v1s *V1Slave) MainLoop(conn net.Conn, c chan bool) {
 	}
 }
 
+func sendError(c chan error, err error) {
+	defer func() {
+		x := recover()
+		if x != nil {
+			log.Printf("warn: panic[%v] recovered\n", x)
+		}
+	}()
+	c <- err
+}
+
 //it is a runtime send timeouterror to errorchan
 func (v1s *V1Slave) ticking() {
 	timeout := func() {
-		defer func() {
-			x := recover()
-			if x != nil {
-				log.Printf("warn: panic[%v] recovered\n", x)
-			}
-		}()
 		for _, v := range v1s.jobs {
-			v.errorchan <- common.TimeOutErr
+			sendError(v.errorchan, common.TimeOutErr)
 		}
 	}
 	timeoutticker := time.NewTicker(time.Second)
@@ -132,7 +136,6 @@ func (v1s *V1Slave) ticking() {
 
 func (v1s *V1Slave) writeLoop() error {
 	for job := range v1s.jobschan {
-		v1s.conn.SetDeadline(time.Now().Add(time.Second * 3))
 		_, err := job.c.Write(v1s.conn)
 		if err != nil {
 			return err
@@ -173,7 +176,7 @@ func (v1s *V1Slave) processRead(jobid uint64, line []byte) error {
 		return fmt.Errorf("can`t find job binded on jobid")
 	}
 	defer func(e *error) {
-		job.errorchan <- *e
+		sendError(job.errorchan, *e)
 		v1s.deljob(jobid)
 	}(&err)
 	if !bytes.Equal(c, common.OK) {
@@ -195,13 +198,15 @@ func (v1s *V1Slave) processRead(jobid uint64, line []byte) error {
 
 func (v1s *V1Slave) pingLoop() error {
 	for !v1s.stoped {
-		time.Sleep(time.Second * 1)
-		log.Printf("debug: master start to ping")
+		time.Sleep(time.Second * 3)
+		log.Printf("debug: master start to ping\n")
+
 		js, err := v1s.ping()
 		if err != nil {
 			return err
 		}
 		log.Printf("info: ping finished,raw message are %v\n", string(js))
+
 	}
 	return nil
 }
