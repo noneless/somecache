@@ -14,12 +14,9 @@ high performance and scalable memory cache system
 #use case 
 	go get github.com/756445638/somecache
 	cd ${GOPATH}/src/github.com/756445638/somecache
-	go run  examples/pub.go 
+	go run  examples/pub.go  -log-file d://tmp.log
 	go run slave.go -cachesize 500 -worker=3   //worker is like a donwload thread
 	go run slave.go -cachesize 500 -worker 2 -master-tcp-address 192.168.1.8:4000
-	
-	there are some other messages dump into stdout,dont`t mind it to much
-	pub.go is tool that read from stdio,and get or put message 
 	support cmds are:
 		get remote aaa
 		get aaa

@@ -17,8 +17,11 @@ package main
 
 import (
 	"flag"
+	"log"
 	"sync"
 	"time"
+
+	"github.com/comail/colog"
 
 	"github.com/756445638/somecache/slave"
 )
@@ -27,11 +30,11 @@ var (
 	master    = flag.String("master-tcp-address", "127.0.0.1:4000", "master addr")
 	worker    = flag.Int("worker", 1, "worker count")
 	cachesize = flag.Int64("cachesize", 1024, "cachesize in MB")
-
-	wg = sync.WaitGroup{}
+	wg        = sync.WaitGroup{}
 )
 
 func main() {
+	colog.Register()
 	flag.Parse()
 	if *worker <= 1 {
 		*worker = 1
@@ -39,6 +42,7 @@ func main() {
 	if *worker > 5 {
 		*worker = 5
 	}
+	log.Printf("info: start up master-tcp-address:%s cachesize:%dm", *master, *cachesize)
 	wg.Add(*worker)
 	for i := 0; i < *worker; i++ {
 		time.Sleep(time.Second)

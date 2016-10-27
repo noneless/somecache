@@ -18,6 +18,7 @@ package master
 import (
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"strings"
 	"sync"
@@ -54,29 +55,31 @@ func SetUpCacheSize(size int64) {
 }
 
 func (s *Service) setDefaultParameter() {
-	s.localcache.SetMaxCacheSize(defaultCacheSize)
+	s.localcache.Init(defaultCacheSize)
 	s.jobchan = make(chan *job, 1024)
 }
 
 func (s *Service) Server(ln net.Listener) error {
 	s.setDefaultParameter()
 	defer ln.Close()
+	log.Println("info:starting to accept connections")
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
+			log.Printf("warn: accepet conn failed,err:%v\n", err)
 			return err
 		}
+		log.Printf("info: accpeted connection,remote addr:%v\n", conn.RemoteAddr().String())
 		versionbytes := make([]byte, 4)
 		n, err := conn.Read(versionbytes)
 		if err != nil || n != 4 {
-			fmt.Println("read version bytes error:", err)
+			log.Printf("error:read version bytes error:%v\n", err)
 			continue
 		}
-		fmt.Println("accept conn:", string(versionbytes), time.Now())
 		slave := &Slave{service: s}
 		handler, err := newVersionHandler(versionbytes, slave)
 		if err != nil {
-			fmt.Println("unsupport protocol version", string(versionbytes))
+			log.Printf("warn: unsupport protocol version:%v\n", string(versionbytes))
 			continue
 		}
 		slave.addr = conn.(*net.TCPConn).RemoteAddr()
@@ -156,6 +159,7 @@ func (s *Service) Get(key string) ([]byte, error) {
 	if data != nil { // find cache in localcache,nothing to do,just return
 		return data, nil
 	}
+	log.Printf("debug:localcache missed,key:%v\n", key)
 	var err error
 	data, err = s.getRemoteCache(key)
 	if err == nil { // find cache in remote cache,store in local
@@ -163,7 +167,7 @@ func (s *Service) Get(key string) ([]byte, error) {
 		return data, nil
 	}
 	// not in localcache and not in remotecache
-
+	log.Printf("lookup remote cache,err:", err)
 	if !strings.Contains(err.Error(), "NOT_FOUND") && !strings.Contains(err.Error(), "timeout") {
 		//some error but no "NOT_FOUND",it is a not very serious error
 		return nil, err

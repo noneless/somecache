@@ -21,6 +21,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"net"
 	"sync"
 	"time"
@@ -30,16 +32,16 @@ import (
 )
 
 func Connection2Master(tcp_addr string, cachesize int64) {
-	cache.SetMaxCacheSize(cachesize)
+	cache.Init(cachesize)
 	for {
 		conn, err := net.Dial("tcp", tcp_addr)
 		if err != nil {
-			fmt.Println("dail master server failed,err:", err)
+			log.Printf("warn: dail master server failed,err:%v", err)
 			continue
 		}
 		_, err = conn.Write(common.MagicV1)
 		if err != nil {
-			fmt.Println("write magic version v1 failed,err:", err)
+			log.Printf("warn: write magic version v1 failed,err:%v", err)
 			continue
 		}
 		v1s := &V1Slave{
@@ -47,7 +49,7 @@ func Connection2Master(tcp_addr string, cachesize int64) {
 		}
 		e := v1s.MainLoop()
 		if e != nil {
-			fmt.Println("IOLoop failed,err:", e)
+			log.Printf("warn:IOLoop failed,err:%v", e)
 		}
 	}
 }
@@ -65,18 +67,23 @@ func (v1s *V1Slave) MainLoop() error {
 	if err := v1s.Login(); err != nil {
 		return fmt.Errorf("login failed,err:%v", err)
 	}
-	fmt.Println("login ok")
+	log.Printf("debug: login ok")
 	for {
 		v1s.conn.SetDeadline(time.Now().Add(60 * time.Second))
-		jodid, line, err := common.ReadLine(v1s.reader)
-		if err != nil {
+		jodid, line, err := common.ReadLine(v1s.conn.(*net.TCPConn))
+		if err != nil && err != io.EOF {
 			return err
 		}
-		fmt.Printf("read line,data[%s] raw[%v]\n", string(line), line)
+		log.Printf("debug: read line,data[%s]\n", string(line))
+		if len(line) == 0 {
+			//log.Println("warn: line length is 0")
+			continue
+		}
 		cmd := &common.Command{}
 		err = v1s.Exec(cmd, line)
 		cmd.Jobid = jodid
 		if err != nil {
+			log.Printf("info: exec failed,err:%v", err)
 			cmd.Command = []byte(err.Error())
 		} else {
 			cmd.Command = common.OK
@@ -129,7 +136,6 @@ func (v1s *V1Slave) Login() error {
 }
 
 func (v1s *V1Slave) Get(ret *common.Command, para [][]byte) error {
-	//	time.Sleep(5 * time.Second)
 	if len(para) != 1 {
 		return fmt.Errorf("must have 1 parameter")
 	}

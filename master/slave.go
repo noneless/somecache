@@ -35,7 +35,7 @@ func newVersionHandler(v []byte, slave *Slave) (ProtocolHandler, error) {
 	if bytes.Equal(v, common.MagicV1) {
 		v1 := &V1Slave{
 			slave:    slave,
-			notify:   make(map[uint64]*job),
+			jobs:     make(map[uint64]*job),
 			jobschan: make(chan *job, 1024),
 		}
 		return v1, nil

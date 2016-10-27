@@ -19,6 +19,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -26,12 +27,15 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/comail/colog"
+
 	"github.com/756445638/somecache/master"
 )
 
 var (
 	wg          = sync.WaitGroup{}
 	tcp_address = flag.Int("tcp-address", 4000, "tcp address")
+	log_file    = flag.String("log-file", "", "log file")
 	dir         = flag.String("dir", "", "directory")
 )
 
@@ -43,8 +47,18 @@ func signalHandle() {
 }
 
 func main() {
+	colog.Register()
 	go signalHandle()
 	flag.Parse()
+	if *log_file != "" {
+		fi, err := os.OpenFile(*log_file, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0600)
+		if err != nil {
+			log.Printf("error:can`t open log file,err:%v", err)
+			os.Exit(1)
+		}
+		colog.SetOutput(fi)
+	}
+	log.Printf("info: listen on port %v\n", *tcp_address)
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", *tcp_address))
 	if err != nil {
 		panic(err)
@@ -52,7 +66,7 @@ func main() {
 	go func() {
 		err = master.Server(ln)
 		if err != nil {
-			fmt.Printf("master.Server server failed,err[%v]\n", err)
+			log.Printf("error: master.Server server failed,err[%v]\n", err)
 		}
 	}()
 	reader := bufio.NewReader(os.Stdin)
@@ -72,7 +86,7 @@ func main() {
 			s = strings.TrimLeft(s, " ")
 			put(s)
 		} else {
-			fmt.Println("unkown command")
+			fmt.Println("error:unkown command")
 		}
 	}
 	wg.Add(1)
@@ -97,7 +111,7 @@ func get(s string) {
 		fmt.Println("err:", err)
 		return
 	}
-	fmt.Println("geted:", string(data))
+	fmt.Println("data:", string(data))
 }
 
 func put(s string) {
@@ -110,12 +124,13 @@ func put(s string) {
 	s = strings.TrimRight(s, " ")
 	t := strings.Split(s, " ")
 	if len(t) < 2 {
-		fmt.Println("paramter error")
+		fmt.Println("error:paramter error")
 		return
 	}
 
 	key := t[0]
 	data := []byte(t[1])
 	master.Put(key, data, remote)
+	fmt.Println("ok")
 
 }

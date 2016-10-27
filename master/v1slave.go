@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -31,18 +32,17 @@ import (
 )
 
 type V1Slave struct {
-	reader      *bufio.Reader
-	stoped      bool
-	t           int64
-	lock        sync.Mutex
-	conn        net.Conn
-	ctx         context
-	slave       *Slave
-	jobschan    chan *job
-	pingpool    sync.Pool
-	jobid       uint64
-	notify      map[uint64]*job
-	notify_lock sync.Mutex
+	reader    *bufio.Reader
+	stoped    bool
+	lock      sync.Mutex
+	conn      net.Conn
+	ctx       context
+	slave     *Slave
+	jobschan  chan *job
+	pingpool  sync.Pool
+	jobid     uint64
+	jobs      map[uint64]*job
+	jobs_lock sync.Mutex
 }
 
 type job struct {
@@ -50,12 +50,6 @@ type job struct {
 	c         *common.Command
 	diff      interface{} //diff is a field can receive any kind of data
 	errorchan chan error  //errorchan is also an endchanv that will notify caller to exit
-}
-
-func (v1s *V1Slave) ifstoped() bool {
-	v1s.lock.Lock()
-	defer v1s.lock.Unlock()
-	return v1s.stoped
 }
 
 func (v1s *V1Slave) Login(c chan bool) error {
@@ -91,7 +85,7 @@ func (v1s *V1Slave) MainLoop(conn net.Conn, c chan bool) {
 	err := v1s.Login(c)
 	c <- (err == nil)
 	if err != nil {
-		fmt.Println("login failed,err:", err)
+		log.Println("error:login failed,err:", err)
 		return
 	}
 	errchan := make(chan error)
@@ -105,40 +99,40 @@ func (v1s *V1Slave) MainLoop(conn net.Conn, c chan bool) {
 		errchan <- v1s.pingLoop()
 	}()
 	go func() {
-		v1s.timeoutTick()
+		v1s.ticking()
 		errchan <- nil
 	}()
 	e := <-errchan
 	if err != nil {
-		fmt.Println("err poped:", e)
+		log.Printf("error:err poped:%v\n", e)
 	}
 }
 
 //it is a runtime send timeouterror to errorchan
-func (v1s *V1Slave) timeoutTick() {
-	f := func() {
+func (v1s *V1Slave) ticking() {
+	timeout := func() {
 		defer func() {
 			x := recover()
 			if x != nil {
-				fmt.Printf("panic[%v] recovered\n", x)
+				log.Printf("warn: panic[%v] recovered\n", x)
 			}
 		}()
-		for _, v := range v1s.notify {
+		for _, v := range v1s.jobs {
 			v.errorchan <- common.TimeOutErr
 		}
 	}
-	ticker := time.NewTicker(time.Second)
+	timeoutticker := time.NewTicker(time.Second)
 	for !v1s.stoped {
 		select {
-		case <-ticker.C:
-			f()
+		case <-timeoutticker.C:
+			timeout()
 		}
 	}
 }
 
 func (v1s *V1Slave) writeLoop() error {
 	for job := range v1s.jobschan {
-		v1s.conn.SetDeadline(time.Now().Add(time.Second * 30))
+		v1s.conn.SetDeadline(time.Now().Add(time.Second * 3))
 		_, err := job.c.Write(v1s.conn)
 		if err != nil {
 			return err
@@ -152,12 +146,12 @@ func (v1s *V1Slave) readLoop() error {
 	for {
 		jobid, line, err := common.ReadLine(v1s.reader)
 		if err != nil {
-			fmt.Println("read error:", err)
 			return err
 		}
+		log.Printf("debug: read line[%s]\n", string(line))
 		err = v1s.processRead(jobid, line)
 		if err != nil {
-			fmt.Println("process line error:", err)
+			log.Printf("warn:process line error:%v\n", err)
 		}
 	}
 	return nil
@@ -166,33 +160,26 @@ func (v1s *V1Slave) processRead(jobid uint64, line []byte) error {
 	defer func() {
 		x := recover()
 		if x != nil {
-			fmt.Printf("panic[%v] recovered\n", x)
+			log.Printf("warn:panic[%v] recovered\n", x)
 		}
 	}()
 	var err error
 	c, _ := common.ParseCommand(line)
-	fmt.Printf("read line[%s] raw[%v] jobid[%d]\n", string(line), line, jobid)
 	if err != nil {
 		return err
 	}
-	v1s.notify_lock.Lock()
-	job, ok := v1s.notify[jobid]
-	v1s.notify_lock.Unlock()
+	job, ok := v1s.jobs[jobid]
 	if !ok {
 		return fmt.Errorf("can`t find job binded on jobid")
 	}
 	defer func(e *error) {
 		job.errorchan <- *e
-		v1s.notify_lock.Lock()
-		delete(v1s.notify, jobid)
-		v1s.notify_lock.Unlock()
+		v1s.deljob(jobid)
 	}(&err)
 	if !bytes.Equal(c, common.OK) {
-		err = fmt.Errorf("slave return error:", string(c))
-		return err
+		return fmt.Errorf("slave return error:", string(c))
 	}
 	if bytes.Equal(job.c.Command, common.COMMAND_GET) {
-		fmt.Printf("read result")
 		dest := job.diff.(*[]byte)
 		*dest, _, err = common.ReadBody4(v1s.reader, nil)
 	} else if bytes.Equal(job.c.Command, common.COMMAND_PUT) { //ok is just enough
@@ -207,17 +194,14 @@ func (v1s *V1Slave) processRead(jobid uint64, line []byte) error {
 }
 
 func (v1s *V1Slave) pingLoop() error {
-	for {
-		time.Sleep(time.Second * 30)
-		if v1s.stoped {
-			return stoppedError
-		}
-		fmt.Println("master start to ping")
+	for !v1s.stoped {
+		time.Sleep(time.Second * 1)
+		log.Printf("debug: master start to ping")
 		js, err := v1s.ping()
 		if err != nil {
 			return err
 		}
-		fmt.Println("ping finished:", string(js))
+		log.Printf("info: ping finished,raw message are %v\n", string(js))
 	}
 	return nil
 }
@@ -229,25 +213,15 @@ func (v1s *V1Slave) Close() {
 	close(v1s.jobschan)
 }
 
-func (v1s *V1Slave) Get(key string) ([]byte, error) {
-	if v1s.ifstoped() {
-		return nil, stoppedError
-	}
-	var b []byte
-	errorchan := make(chan error)
-	defer close(errorchan)
-	jobid := v1s.newJobId()
-	job := &job{
-		c:         common.NewCommand(common.COMMAND_GET, [][]byte{[]byte(key)}, nil, jobid),
-		diff:      &b,
-		errorchan: errorchan,
-		jobid:     jobid,
-	}
-	v1s.notify_lock.Lock()
-	v1s.notify[jobid] = job
-	v1s.notify_lock.Unlock()
-	v1s.jobschan <- job
-	return b, v1s.selectTimeout(errorchan)
+func (v1s *V1Slave) addjob(jobid uint64, j *job) {
+	v1s.jobs_lock.Lock()
+	v1s.jobs[jobid] = j
+	v1s.jobs_lock.Unlock()
+}
+func (v1s *V1Slave) deljob(jobid uint64) {
+	v1s.jobs_lock.Lock()
+	delete(v1s.jobs, jobid)
+	v1s.jobs_lock.Unlock()
 }
 
 func (v1s *V1Slave) selectTimeout(ch chan error) error {
@@ -273,41 +247,65 @@ func (v1s *V1Slave) newJobId() uint64 {
 }
 
 func (v1s *V1Slave) Put(key string, data []byte) error {
-	if v1s.ifstoped() {
+	v1s.lock.Lock()
+	defer v1s.lock.Unlock()
+	if v1s.stoped {
 		return stoppedError
 	}
 	errorchan := make(chan error)
 	defer close(errorchan)
 	jobid := v1s.newJobId()
-	job := &job{
+	j := &job{
 		c:         common.NewCommand(common.COMMAND_PUT, [][]byte{[]byte(key)}, data, jobid),
 		diff:      nil,
 		errorchan: errorchan,
 		jobid:     jobid,
 	}
-	v1s.notify_lock.Lock()
-	v1s.notify[jobid] = job
-	v1s.notify_lock.Unlock()
-	v1s.jobschan <- job
+	v1s.addjob(jobid, j)
+	v1s.jobschan <- j
 	return v1s.selectTimeout(errorchan)
 }
 
 func (v1s *V1Slave) ping() ([]byte, error) {
+	v1s.lock.Lock() // in case ,chan is closed
+	defer v1s.lock.Unlock()
+	if v1s.stoped {
+		return nil, stoppedError
+	}
 	errorchan := make(chan error)
 	defer close(errorchan)
 	jobid := v1s.newJobId()
 	var dest []byte
-	job := &job{
+	j := &job{
 		c:         common.NewCommand(common.COMMAND_PING, nil, nil, jobid),
 		diff:      &dest,
 		errorchan: errorchan,
 		jobid:     jobid,
 	}
-	v1s.jobschan <- job
-	v1s.notify_lock.Lock()
-	v1s.notify[jobid] = job
-	v1s.notify_lock.Unlock()
+	v1s.jobschan <- j
+	v1s.addjob(jobid, j)
 	return dest, v1s.selectTimeout(errorchan)
+}
+
+func (v1s *V1Slave) Get(key string) ([]byte, error) {
+	v1s.lock.Lock()
+	defer v1s.lock.Unlock()
+	if v1s.stoped {
+		return nil, stoppedError
+	}
+	var b []byte
+	errorchan := make(chan error)
+	defer close(errorchan)
+	jobid := v1s.newJobId()
+	j := &job{
+		c:         common.NewCommand(common.COMMAND_GET, [][]byte{[]byte(key)}, nil, jobid),
+		diff:      &b,
+		errorchan: errorchan,
+		jobid:     jobid,
+	}
+	v1s.addjob(jobid, j)
+	v1s.jobschan <- j
+	return b, v1s.selectTimeout(errorchan)
 }
 
 var stoppedError = errors.New("slave stoped")

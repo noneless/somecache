@@ -31,7 +31,6 @@ type Command struct {
 
 //not thread safe
 func (c *Command) Write(w io.Writer) (int, error) {
-	fmt.Printf("write debug[%s]\n", string(c.Command))
 	total := int(0)
 
 	jb := Uint642byte(c.Jobid)
