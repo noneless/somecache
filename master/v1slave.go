@@ -98,10 +98,6 @@ func (v1s *V1Slave) MainLoop(conn net.Conn, c chan bool) {
 	go func() {
 		errchan <- v1s.pingLoop()
 	}()
-	go func() {
-		v1s.ticking()
-		errchan <- nil
-	}()
 	e := <-errchan
 	if err != nil {
 		log.Printf("error:err poped:%v\n", e)
@@ -228,21 +224,13 @@ func (v1s *V1Slave) deljob(jobid uint64) {
 	delete(v1s.jobs, jobid)
 	v1s.jobs_lock.Unlock()
 }
-
 func (v1s *V1Slave) selectTimeout(ch chan error) error {
-	i := 0
-	for {
-		select {
-		case err := <-ch:
-			_, ok := err.(*common.TimeoutError) //not time out,ok just return
-			if !ok {
-				return err
-			}
-			i++
-			if i == 2 { //after 2 error was received,I am sure that this chan has been lived for 1~2 second,that`s it
-				return err
-			}
-		}
+	var err error
+	select {
+	case <-time.After(time.Second * 2):
+		return fmt.Errorf("timeout")
+	case err = <-ch:
+		return err
 	}
 	return nil
 }

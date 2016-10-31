@@ -25,6 +25,7 @@ import (
 	"log"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/756445638/somecache/common"
 	"github.com/756445638/somecache/message"
@@ -134,6 +135,7 @@ func (v1s *V1Slave) Login() error {
 }
 
 func (v1s *V1Slave) Get(ret *common.Command, para [][]byte) error {
+	time.Sleep(5 * time.Second)
 	if len(para) != 1 {
 		return fmt.Errorf("must have 1 parameter")
 	}
